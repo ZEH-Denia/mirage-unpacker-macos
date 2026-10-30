@@ -333,6 +333,54 @@ do {
 }
 
 
+// MARK: - 仅导出图片
+
+section("ImageExporter 导出与命名")
+do {
+    let fm = FileManager.default
+    let work = fm.temporaryDirectory.appendingPathComponent("pkd-export-work-\(UUID().uuidString)")
+    let dest = fm.temporaryDirectory.appendingPathComponent("pkd-export-dest-\(UUID().uuidString)")
+    try? fm.createDirectory(at: work.appendingPathComponent("materials"), withIntermediateDirectories: true)
+    try? fm.createDirectory(at: dest, withIntermediateDirectories: true)
+
+    func write(_ relative: String, _ text: String) {
+        try? Data(text.utf8).write(to: work.appendingPathComponent(relative))
+    }
+
+    write("materials/未标题-1 拷贝 [正常].jpg", "clean")
+    write("materials/未标题-2 拷贝 [X-Ray].jpg", "xray")
+    write("preview.jpg", "preview")
+    write("scene.json", "{}")
+
+    var xray = XRayLabelSummary()
+    xray.cleanFiles = ["未标题-1 拷贝 [正常].jpg"]
+    xray.xrayFiles = ["未标题-2 拷贝 [X-Ray].jpg"]
+
+    let first = ImageExporter.export(from: work, to: dest, title: "测试壁纸", xray: xray)
+    checkEqual(first.files, ["测试壁纸_正常.jpg", "测试壁纸_X-Ray.jpg"], "按壁纸名重命名两层")
+    check(fm.fileExists(atPath: dest.appendingPathComponent("测试壁纸_正常.jpg").path), "正常层已写入")
+    check(fm.fileExists(atPath: dest.appendingPathComponent("测试壁纸_X-Ray.jpg").path), "X-Ray 层已写入")
+    check(!fm.fileExists(atPath: dest.appendingPathComponent("preview.jpg").path), "预览图不应被导出")
+
+    // 重复导出不应覆盖已有文件
+    let second = ImageExporter.export(from: work, to: dest, title: "测试壁纸", xray: xray)
+    checkEqual(second.files, ["测试壁纸_正常 (2).jpg", "测试壁纸_X-Ray (2).jpg"], "同名文件自动加序号")
+
+    // 没有 X-Ray：导出全部图片
+    let plainWork = fm.temporaryDirectory.appendingPathComponent("pkd-export-plain-\(UUID().uuidString)")
+    try? fm.createDirectory(at: plainWork.appendingPathComponent("materials"), withIntermediateDirectories: true)
+    try? Data("a".utf8).write(to: plainWork.appendingPathComponent("materials/贴图.png"))
+    try? Data("p".utf8).write(to: plainWork.appendingPathComponent("preview.jpg"))
+
+    let plainDest = fm.temporaryDirectory.appendingPathComponent("pkd-export-plain-dest-\(UUID().uuidString)")
+    let plain = ImageExporter.export(from: plainWork, to: plainDest, title: "无Xray", xray: XRayLabelSummary())
+    checkEqual(plain.files, ["无Xray_贴图.png"], "无 X-Ray 时导出全部图片且排除预览图")
+
+    for dir in [work, dest, plainWork, plainDest] {
+        try? fm.removeItem(at: dir)
+    }
+}
+
 // MARK: - 集成：真实 repkg
 
 section("集成测试：真实 repkg")

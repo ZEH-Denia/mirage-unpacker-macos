@@ -269,14 +269,21 @@ final class AppModel: ObservableObject {
     }
 
     func performExtraction(_ targets: [WallpaperItem]) {
+        let imageOnly = settings.exportImagesOnly
+        let root = imageOnly ? settings.imageExportRoot : settings.outputRoot
+
         do {
-            try FileManager.default.createDirectory(at: settings.outputRoot, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         } catch {
             alertMessage = "无法创建输出目录：\(error.localizedDescription)"
             return
         }
 
-        let created = queue.enqueue(items: targets, settings: settings)
+        let created = queue.enqueue(
+            items: targets,
+            settings: settings,
+            imageExportDestination: imageOnly ? settings.imageExportRoot : nil
+        )
         if created.isEmpty {
             alertMessage = "所选项目都无法解包（缺少 pkg 或类型为视频）"
         } else {
@@ -297,16 +304,19 @@ final class AppModel: ObservableObject {
         }
 
         if job.report?.verdict.isSuccess == true {
+            // 仅导出图片时，历史记录指向图片目录（临时解包目录已被删除）
+            let recordPath = job.exportedImages?.directory ?? job.outputDirectory
+
             history.record(
                 id: job.item.id,
-                outputPath: job.outputDirectory,
+                outputPath: recordPath,
                 verdict: verdictText,
                 fileCount: job.report?.outputFileCount ?? 0,
                 xrayCleanFile: job.xray.cleanFiles.first,
                 xrayLayerFile: job.xray.xrayFiles.first
             )
             if settings.openFinderWhenDone {
-                NSWorkspace.shared.activateFileViewerSelecting([job.outputDirectory])
+                NSWorkspace.shared.activateFileViewerSelecting([recordPath])
             }
         }
     }
@@ -342,6 +352,12 @@ final class AppModel: ObservableObject {
     }
 
     func openOutput(for item: WallpaperItem) {
+        if let entry = history.entry(for: item.id),
+           FileManager.default.fileExists(atPath: entry.outputPath) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: entry.outputPath))
+            return
+        }
+
         let dir = OutputLayout.outputDirectory(for: item, root: settings.outputRoot)
         if FileManager.default.fileExists(atPath: dir.path) {
             NSWorkspace.shared.open(dir)

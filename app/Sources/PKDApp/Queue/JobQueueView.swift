@@ -102,6 +102,18 @@ struct JobRow: View {
                 .foregroundStyle(.orange)
             }
 
+            if let export = job.exportedImages, !export.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "photo.stack")
+                        .font(.caption2)
+                    Text("已导出 \(export.files.count) 张：\(export.summary)")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .font(.caption2)
+                .foregroundStyle(.green)
+            }
+
             HStack(spacing: 8) {
                 if job.state.isRunning {
                     Button("取消") { model.queue.cancel(job.id) }
@@ -114,9 +126,11 @@ struct JobRow: View {
                 }
 
                 if job.report?.verdict.isSuccess == true {
-                    Button("打开输出") { model.revealInFinder(job.outputDirectory) }
-                        .buttonStyle(.link)
-                        .font(.caption)
+                    Button(job.exportedImages == nil ? "打开输出" : "打开图片目录") {
+                        model.revealInFinder(job.exportedImages?.directory ?? job.outputDirectory)
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
                 }
 
                 Spacer()

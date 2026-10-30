@@ -178,7 +178,12 @@ struct WallpaperDetailView: View {
                 model.selection = [item.id]
                 model.requestExtraction()
             } label: {
-                Label("解包", systemImage: "shippingbox.and.arrow.backward")
+                Label(
+                    model.settings.exportImagesOnly ? "导出图片" : "解包",
+                    systemImage: model.settings.exportImagesOnly
+                        ? "photo.on.rectangle.angled"
+                        : "shippingbox.and.arrow.backward"
+                )
             }
             .disabled(!item.isExtractable)
 

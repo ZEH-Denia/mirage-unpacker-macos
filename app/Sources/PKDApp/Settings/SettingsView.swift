@@ -48,6 +48,39 @@ private struct SettingsForm: View {
                 }
             }
 
+            Section("导出模式") {
+                Picker("模式", selection: $settings.exportImagesOnly) {
+                    Text("完整解包").tag(false)
+                    Text("仅导出图片").tag(true)
+                }
+                .pickerStyle(.segmented)
+
+                if settings.exportImagesOnly {
+                    LabeledContent("图片目录") {
+                        HStack(spacing: 8) {
+                            Text(settings.imageExportRoot.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button("选择…") { chooseImageRoot() }
+                            Button("打开") {
+                                try? FileManager.default.createDirectory(
+                                    at: settings.imageExportRoot,
+                                    withIntermediateDirectories: true
+                                )
+                                NSWorkspace.shared.open(settings.imageExportRoot)
+                            }
+                        }
+                    }
+
+                    Text("解包到临时目录，只把「正常层」和「X-Ray 层」复制到该目录，然后清理临时文件。"
+                         + "命名为 <标题>_正常.jpg / <标题>_X-Ray.jpg；没有 X-Ray 的壁纸导出全部图片。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("解包选项") {
                 Toggle("覆盖已存在的文件", isOn: $settings.overwrite)
                 Toggle("把 TEX 转换为图片", isOn: $settings.convertTextures)
@@ -107,8 +140,20 @@ private struct SettingsForm: View {
         }
     }
 
-    private func chooseOutputRoot() {
+    private func chooseImageRoot() {
         let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择图片目录"
+        panel.directoryURL = settings.imageExportRoot
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.imageExportRoot = url
+        }
+    }
+
+    private func chooseOutputRoot() {        let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true

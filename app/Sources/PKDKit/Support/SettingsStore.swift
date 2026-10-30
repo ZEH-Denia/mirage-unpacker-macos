@@ -43,6 +43,15 @@ public final class SettingsStore: ObservableObject {
         didSet { defaults.set(confirmBeforeStart, forKey: Keys.confirmBeforeStart) }
     }
 
+    /// 仅导出图片模式：解包到临时目录，只把正常层 / X-Ray 层复制到 imageExportRoot，然后清理临时文件
+    @Published public var exportImagesOnly: Bool {
+        didSet { defaults.set(exportImagesOnly, forKey: Keys.exportImagesOnly) }
+    }
+
+    @Published public var imageExportRoot: URL {
+        didSet { defaults.set(imageExportRoot.path, forKey: Keys.imageExportRoot) }
+    }
+
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -63,6 +72,9 @@ public final class SettingsStore: ObservableObject {
         maxConcurrentJobs = defaults.object(forKey: Keys.maxConcurrentJobs) as? Int ?? 1
         onlySceneType = defaults.object(forKey: Keys.onlySceneType) as? Bool ?? false
         confirmBeforeStart = defaults.object(forKey: Keys.confirmBeforeStart) as? Bool ?? true
+        exportImagesOnly = defaults.object(forKey: Keys.exportImagesOnly) as? Bool ?? false
+        imageExportRoot = defaults.string(forKey: Keys.imageExportRoot).map { URL(fileURLWithPath: $0) }
+            ?? home.appendingPathComponent("Pictures/MirageImages", isDirectory: true)
     }
 
     public func makeRequest(for item: WallpaperItem) -> ExtractRequest? {
@@ -88,5 +100,7 @@ public final class SettingsStore: ObservableObject {
         static let maxConcurrentJobs = "pkd.maxConcurrentJobs"
         static let onlySceneType = "pkd.onlySceneType"
         static let confirmBeforeStart = "pkd.confirmBeforeStart"
+        static let exportImagesOnly = "pkd.exportImagesOnly"
+        static let imageExportRoot = "pkd.imageExportRoot"
     }
 }

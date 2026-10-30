@@ -15,6 +15,12 @@ public struct XRayLabelSummary: Sendable, Equatable {
     public var cleanFiles: [String] = []
     public var xrayFiles: [String] = []
 
+    public init(layers: [XRayLayer] = [], cleanFiles: [String] = [], xrayFiles: [String] = []) {
+        self.layers = layers
+        self.cleanFiles = cleanFiles
+        self.xrayFiles = xrayFiles
+    }
+
     public var isEmpty: Bool { layers.isEmpty }
 
     public var shortDescription: String? {

@@ -80,6 +80,11 @@ public final class ExtractJob: ObservableObject, Identifiable {
     @Published public var warnings: [String] = []
     /// 解包后识别出的 X-Ray 图层（正常层 / X-Ray 层各是哪张图）
     @Published public var xray = XRayLabelSummary()
+    /// 「仅导出图片」模式：非空表示解包产物是临时的，导出后要删除
+    public var temporaryOutput: URL?
+    /// 「仅导出图片」模式的图片目标目录
+    public var imageExportDestination: URL?
+    @Published public var exportedImages: ImageExportResult?
     public var startedAt: Date?
     public var endedAt: Date?
     public var session: RepkgSession?

@@ -28,14 +28,33 @@ public final class JobQueue: ObservableObject {
     // MARK: - 队列操作
 
     @discardableResult
-    public func enqueue(items: [WallpaperItem], settings: SettingsStore) -> [ExtractJob] {
+    public func enqueue(items: [WallpaperItem],
+                        settings: SettingsStore,
+                        imageExportDestination: URL? = nil) -> [ExtractJob] {
         var created: [ExtractJob] = []
+
         for item in items where item.isExtractable {
-            guard let request = settings.makeRequest(for: item) else { continue }
-            let job = ExtractJob(item: item, request: request)
-            jobs.append(job)
-            created.append(job)
+            guard var request = settings.makeRequest(for: item) else { continue }
+
+            if let destination = imageExportDestination {
+                // 仅导出图片：解包到临时目录，导出后清理
+                let temp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("PKD-extract-\(UUID().uuidString)", isDirectory: true)
+                try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+                request.outputDirectory = temp
+
+                let job = ExtractJob(item: item, request: request)
+                job.temporaryOutput = temp
+                job.imageExportDestination = destination
+                jobs.append(job)
+                created.append(job)
+            } else {
+                let job = ExtractJob(item: item, request: request)
+                jobs.append(job)
+                created.append(job)
+            }
         }
+
         pump()
         return created
     }
@@ -192,6 +211,34 @@ public final class JobQueue: ObservableObject {
                         text: "X-Ray 图层已分离：\(summary.shortDescription ?? "已识别 \(layers.count) 处")",
                         kind: .marker
                     )
+                }
+            }
+
+            // 仅导出图片模式：把图片复制到目标目录，随后删除临时解包目录
+            if let destination = job.imageExportDestination {
+                if report.verdict.isSuccess {
+                    let result = ImageExporter.export(
+                        from: job.request.outputDirectory,
+                        to: destination,
+                        title: job.item.title,
+                        xray: job.xray
+                    )
+                    job.exportedImages = result
+
+                    if result.isEmpty {
+                        job.warnings.append("未找到可导出的图片")
+                        logSink.append(jobID: jobID, text: "警告：未找到可导出的图片", kind: .warning)
+                    } else {
+                        logSink.append(
+                            jobID: jobID,
+                            text: "已导出 \(result.files.count) 张图片 → \(destination.path)：\(result.summary)",
+                            kind: .marker
+                        )
+                    }
+                }
+
+                if let temp = job.temporaryOutput {
+                    try? FileManager.default.removeItem(at: temp)
                 }
             }
 

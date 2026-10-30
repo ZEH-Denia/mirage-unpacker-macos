@@ -76,6 +76,17 @@ struct RootView: View {
 
     private func confirmMessage(_ request: AppModel.ConfirmRequest) -> String {
         let estimate = ByteCountFormatter.string(fromByteCount: request.estimateBytes, countStyle: .file)
+
+        if model.settings.exportImagesOnly {
+            var text = "将从 \(request.items.count) 个壁纸导出图片到：\n\(model.settings.imageExportRoot.path)"
+            text += "\n\n解包在临时目录进行，完成后只保留图片，其余自动清理。"
+            if let available = request.availableBytes {
+                text += "\n临时空间需求约 \(estimate)，当前剩余 "
+                    + ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
+            }
+            return text
+        }
+
         var text = "将解包 \(request.items.count) 个壁纸，预计占用 \(estimate)。\n输出到：\(model.settings.outputRoot.path)"
         if let available = request.availableBytes {
             let availableText = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
@@ -142,9 +153,14 @@ struct RootView: View {
             Button {
                 model.requestExtraction()
             } label: {
-                Label("解包所选", systemImage: "shippingbox.and.arrow.backward")
+                Label(
+                    model.settings.exportImagesOnly ? "导出图片" : "解包所选",
+                    systemImage: model.settings.exportImagesOnly
+                        ? "photo.on.rectangle.angled"
+                        : "shippingbox.and.arrow.backward"
+                )
             }
-            .help("解包所选壁纸（⌘↩）")
+            .help(model.settings.exportImagesOnly ? "只导出正常层 / X-Ray 层图片（⌘↩）" : "解包所选壁纸（⌘↩）")
             .disabled(model.extractableSelection.isEmpty)
 
             Button {
