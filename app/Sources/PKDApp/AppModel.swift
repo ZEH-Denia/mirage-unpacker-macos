@@ -414,10 +414,16 @@ final class AppModel: ObservableObject {
 
         let extractRoot = settings.outputRoot
         let imageRoot = settings.imageExportRoot
+        // 输出目录被改过时，旧产物不在当前根目录下，靠历史记录把它们捞出来
+        let historyPaths = history.entries.values.map { $0.outputPath }
 
         Task { [weak self] in
             let scanned = await Task.detached(priority: .userInitiated) {
-                StorageScanner.scan(extractRoot: extractRoot, imageRoot: imageRoot)
+                StorageScanner.scan(
+                    extractRoot: extractRoot,
+                    imageRoot: imageRoot,
+                    historyPaths: historyPaths
+                )
             }.value
 
             guard let self else { return }
@@ -441,8 +447,14 @@ final class AppModel: ObservableObject {
 
         let extractRoot = settings.outputRoot
         let imageRoot = settings.imageExportRoot
+        let extraAllowed = Set(history.entries.values.map { $0.outputPath })
 
-        let outcome = StorageScanner.trash(items, extractRoot: extractRoot, imageRoot: imageRoot)
+        let outcome = StorageScanner.trash(
+            items,
+            extractRoot: extractRoot,
+            imageRoot: imageRoot,
+            extraAllowed: extraAllowed
+        )
 
         // 目录没了，历史记录里的「已解包」标记也要跟着失效
         let trashedPaths = Set(outcome.trashed.map { $0.url.path })

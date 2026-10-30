@@ -25,6 +25,30 @@ func section(_ name: String) {
     print("· \(name)")
 }
 
+// MARK: - 手动清理入口（pkd-selftest --trash <目标> <解包根> <图片根>）
+
+if let flagIndex = CommandLine.arguments.firstIndex(of: "--trash"),
+   flagIndex + 3 < CommandLine.arguments.count {
+    let target = URL(fileURLWithPath: CommandLine.arguments[flagIndex + 1])
+    let extractRoot = URL(fileURLWithPath: CommandLine.arguments[flagIndex + 2])
+    let imageRoot = URL(fileURLWithPath: CommandLine.arguments[flagIndex + 3])
+
+    let item = StorageItem(url: target,
+                           kind: .extracted,
+                           displayName: target.lastPathComponent,
+                           sizeBytes: 0,
+                           fileCount: 0,
+                           modified: nil)
+
+    // 刻意不传 extraAllowed：走的就是界面上「按根目录白名单判定」的真实路径
+    let result = StorageScanner.trash([item], extractRoot: extractRoot, imageRoot: imageRoot)
+    print("已移入废纸篓：\(result.trashed.count) 项，失败：\(result.failed.count) 项")
+    for message in result.failed {
+        print("  - \(message)")
+    }
+    exit(result.failed.isEmpty ? 0 : 1)
+}
+
 // MARK: - 队列集成测试入口（pkd-selftest --queue <pkg>）
 
 if let flagIndex = CommandLine.arguments.firstIndex(of: "--queue"),
@@ -448,6 +472,38 @@ do {
     let outcome = StorageScanner.trash([unsafeItem], extractRoot: extractRoot, imageRoot: imageRoot)
     checkEqual(outcome.trashed.count, 0, "越界路径不应被删除")
     checkEqual(outcome.failed.count, 1, "越界路径应记录为失败")
+
+    // 回归：/tmp 是 /private/tmp 的符号链接，contentsOfDirectory 会返回解析后的路径。
+    // 早期版本用字符串前缀比对，导致 /tmp 下的产物「看得到却删不掉」。
+    let symlinkRoot = URL(fileURLWithPath: "/tmp").appendingPathComponent("pkd-symlink-\(UUID().uuidString)")
+    makeFolder(symlinkRoot.appendingPathComponent("产物"), files: 1)
+    let symlinkItems = StorageScanner.scan(extractRoot: symlinkRoot,
+                                           imageRoot: base.appendingPathComponent("无"),
+                                           includeTemporary: false)
+    checkEqual(symlinkItems.count, 1, "应扫描到 /tmp 下的产物")
+    if let item = symlinkItems.first {
+        check(StorageScanner.isSafeToTrash(item.url,
+                                           extractRoot: symlinkRoot,
+                                           imageRoot: base.appendingPathComponent("无")),
+              "符号链接下的产物必须允许删除（曾因 /private/tmp 前缀不匹配而失败）")
+    }
+    try? fm.removeItem(at: symlinkRoot)
+
+    // 历史记录里的旧产物：默认不可见，显式记录后才出现且可删
+    let orphanDir = base.appendingPathComponent("旧输出目录/产物")
+    makeFolder(orphanDir, files: 1)
+    let orphanScan = StorageScanner.scan(extractRoot: extractRoot,
+                                         imageRoot: imageRoot,
+                                         historyPaths: [orphanDir.path],
+                                         includeTemporary: false)
+    check(orphanScan.contains { $0.kind == .orphan && $0.url.path.hasSuffix("产物") }, "历史路径应作为「其他位置」出现")
+    check(!StorageScanner.isSafeToTrash(orphanDir, extractRoot: extractRoot, imageRoot: imageRoot),
+          "未被记录的越界路径仍然拒绝")
+    check(StorageScanner.isSafeToTrash(orphanDir,
+                                       extractRoot: extractRoot,
+                                       imageRoot: imageRoot,
+                                       extraAllowed: [StorageScanner.canonicalPath(orphanDir)]),
+          "历史记录里显式记录的路径允许删除")
 
     try? fm.removeItem(at: base)
 }

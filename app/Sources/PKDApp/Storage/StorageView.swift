@@ -161,6 +161,7 @@ struct StorageView: View {
         case .extracted: return "shippingbox"
         case .images: return "photo.on.rectangle.angled"
         case .temporary: return "clock.arrow.circlepath"
+        case .orphan: return "questionmark.folder"
         }
     }
 
@@ -169,6 +170,7 @@ struct StorageView: View {
         case .extracted: return .accentColor
         case .images: return .green
         case .temporary: return .orange
+        case .orphan: return .purple
         }
     }
 

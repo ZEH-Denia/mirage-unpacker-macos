@@ -6,12 +6,14 @@ public struct StorageItem: Identifiable, Sendable, Hashable {
         case extracted   // 完整解包产物
         case images      // 导出的图片
         case temporary   // 残留的临时解包目录
+        case orphan      // 历史记录里指向的其他位置（输出目录被改过）
 
         public var label: String {
             switch self {
             case .extracted: return "完整解包产物"
             case .images: return "导出图片"
             case .temporary: return "临时文件"
+            case .orphan: return "其他位置"
             }
         }
 
@@ -20,11 +22,12 @@ public struct StorageItem: Identifiable, Sendable, Hashable {
             case .extracted: return "完整解包产物"
             case .images: return "导出图片"
             case .temporary: return "残留临时文件"
+            case .orphan: return "历史记录中的其他位置"
             }
         }
     }
 
-    public let id: String        // 绝对路径
+    public let id: String        // 规范化后的绝对路径
     public let url: URL
     public let kind: Kind
     public let displayName: String
@@ -38,7 +41,7 @@ public struct StorageItem: Identifiable, Sendable, Hashable {
                 sizeBytes: Int64,
                 fileCount: Int,
                 modified: Date?) {
-        self.id = url.standardizedFileURL.path
+        self.id = StorageScanner.canonicalPath(url)
         self.url = url
         self.kind = kind
         self.displayName = displayName
@@ -55,33 +58,69 @@ public struct StorageItem: Identifiable, Sendable, Hashable {
 public enum StorageScanner {
     public static let tempPrefix = "PKD-extract-"
 
-    /// 扫描两个根目录下的子文件夹 + 残留临时目录。
-    /// 只取**一层**子目录，避免把用户自己放进来的深层结构误当成可删项。
+    /// 解析符号链接后的真实路径。
+    ///
+    /// `/tmp` 是 `/private/tmp` 的符号链接，而 `contentsOfDirectory` 返回的子项路径
+    /// 会被 Foundation 解析成 `/private/tmp/...`。若直接拿字符串前缀与配置里的
+    /// `/tmp/...` 比较，会误判为「越界」而拒绝删除——曾导致 `/tmp` 下的解包产物
+    /// 在存储页里看得到、却删不掉。
+    public static func canonicalPath(_ url: URL) -> String {
+        if let resolved = realpath(url.path, nil) {
+            defer { free(resolved) }
+            return String(cString: resolved)
+        }
+
+        // 路径还不存在时，解析父目录再拼回最后一段，
+        // 否则「已存在的父目录 + 不存在的子项」两边规范化形式不一致
+        let parent = url.deletingLastPathComponent()
+        if parent.path != url.path, let resolvedParent = realpath(parent.path, nil) {
+            defer { free(resolvedParent) }
+            let name = url.lastPathComponent
+            return name.isEmpty ? String(cString: resolvedParent)
+                                : String(cString: resolvedParent) + "/" + name
+        }
+
+        return url.standardizedFileURL.path
+    }
+
+    /// 扫描可清理项。
+    /// - Parameter historyPaths: 历史记录里记录过的输出路径；用于把「改过输出目录后留下的旧产物」
+    ///   也纳入清理范围（否则它们在界面上完全不可见）。
     public static func scan(extractRoot: URL,
                             imageRoot: URL,
+                            historyPaths: [String] = [],
                             includeTemporary: Bool = true,
                             fileManager: FileManager = .default) -> [StorageItem] {
         var items: [StorageItem] = []
+        var seen: Set<String> = []
+
+        func append(_ url: URL, kind: StorageItem.Kind) {
+            guard seen.insert(canonicalPath(url)).inserted else { return }
+            items.append(makeItem(url: url, kind: kind, fileManager: fileManager))
+        }
 
         if let children = subdirectories(of: extractRoot, fileManager: fileManager) {
-            for url in children {
-                items.append(makeItem(url: url, kind: .extracted, fileManager: fileManager))
-            }
+            for url in children { append(url, kind: .extracted) }
         }
 
         if let children = subdirectories(of: imageRoot, fileManager: fileManager) {
-            for url in children {
-                items.append(makeItem(url: url, kind: .images, fileManager: fileManager))
-            }
+            for url in children { append(url, kind: .images) }
         }
 
         if includeTemporary {
-            let temp = fileManager.temporaryDirectory
-            if let children = subdirectories(of: temp, fileManager: fileManager) {
+            if let children = subdirectories(of: fileManager.temporaryDirectory, fileManager: fileManager) {
                 for url in children where url.lastPathComponent.hasPrefix(tempPrefix) {
-                    items.append(makeItem(url: url, kind: .temporary, fileManager: fileManager))
+                    append(url, kind: .temporary)
                 }
             }
+        }
+
+        for path in historyPaths where !path.isEmpty {
+            let url = URL(fileURLWithPath: path)
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else { continue }
+            append(url, kind: .orphan)
         }
 
         return items.sorted {
@@ -97,6 +136,7 @@ public enum StorageScanner {
         case .extracted: return 0
         case .images: return 1
         case .temporary: return 2
+        case .orphan: return 3
         }
     }
 
@@ -154,24 +194,33 @@ public enum StorageScanner {
         return (bytes, files)
     }
 
-    /// 只允许删除两个根目录的**直接子项**，以及带固定前缀的临时目录。
-    /// 防止历史数据被篡改后误删到根目录以外的东西。
+    /// 只允许删除两个根目录的**直接子项**、带固定前缀的临时目录，以及历史记录里显式记录过的路径。
+    /// 比较时统一走 `canonicalPath`，避免 `/tmp` → `/private/tmp` 这类符号链接造成的误判。
     public static func isSafeToTrash(_ url: URL,
                                      extractRoot: URL,
                                      imageRoot: URL,
+                                     extraAllowed: Set<String> = [],
                                      fileManager: FileManager = .default) -> Bool {
-        let path = url.standardizedFileURL.path
+        let path = canonicalPath(url)
 
-        for root in [extractRoot, imageRoot] {
-            let rootPath = root.standardizedFileURL.path
-            guard path.hasPrefix(rootPath + "/") else { continue }
-            let relative = String(path.dropFirst(rootPath.count + 1))
-            // 必须是直接子项，且不能是 ".." 之类的相对路径
-            guard !relative.isEmpty, !relative.contains("/") else { continue }
+        // 绝不允许删根目录、家目录或文件系统根
+        let protected = [extractRoot, imageRoot, fileManager.homeDirectoryForCurrentUser]
+            .map { canonicalPath($0) } + ["/"]
+        if protected.contains(path) { return false }
+
+        // 历史记录里显式记录过的路径（输出目录被改过之后的旧产物）
+        if extraAllowed.contains(path) || extraAllowed.contains(url.standardizedFileURL.path) {
             return true
         }
 
-        let tempPath = fileManager.temporaryDirectory.standardizedFileURL.path
+        for root in [extractRoot, imageRoot] {
+            let rootPath = canonicalPath(root)
+            guard path.hasPrefix(rootPath + "/") else { continue }
+            let relative = String(path.dropFirst(rootPath.count + 1))
+            if !relative.isEmpty, !relative.contains("/") { return true }
+        }
+
+        let tempPath = canonicalPath(fileManager.temporaryDirectory)
         if path.hasPrefix(tempPath + "/") {
             let relative = String(path.dropFirst(tempPath.count + 1))
             if !relative.isEmpty, !relative.contains("/"), relative.hasPrefix(tempPrefix) {
@@ -186,12 +235,17 @@ public enum StorageScanner {
     public static func trash(_ items: [StorageItem],
                              extractRoot: URL,
                              imageRoot: URL,
+                             extraAllowed: Set<String> = [],
                              fileManager: FileManager = .default) -> (trashed: [StorageItem], failed: [String]) {
         var trashed: [StorageItem] = []
         var failed: [String] = []
 
         for item in items {
-            guard isSafeToTrash(item.url, extractRoot: extractRoot, imageRoot: imageRoot, fileManager: fileManager) else {
+            guard isSafeToTrash(item.url,
+                                extractRoot: extractRoot,
+                                imageRoot: imageRoot,
+                                extraAllowed: extraAllowed,
+                                fileManager: fileManager) else {
                 failed.append("\(item.displayName)（路径不在允许范围内，已跳过）")
                 continue
             }
