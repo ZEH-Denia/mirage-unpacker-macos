@@ -1,6 +1,7 @@
 import Foundation
 
 public struct ImageExportResult: Sendable, Equatable {
+    /// 该壁纸专属的子目录（root/<壁纸名_id>）
     public var directory: URL
     /// 实际写入的文件名（按「正常层 → X-Ray 层」顺序）
     public var files: [String] = []
@@ -13,24 +14,30 @@ public struct ImageExportResult: Sendable, Equatable {
     }
 }
 
-/// 把解包产物里的图片挑出来，复制到用户指定目录，并按壁纸名重命名。
+/// 把解包产物里的图片挑出来，复制到「以壁纸命名的子文件夹」里。
 ///
-/// 命名规则：
-/// - 识别到 X-Ray → `<标题>_正常.<ext>`、`<标题>_X-Ray.<ext>`
-/// - 没有 X-Ray  → `<标题>_<原文件名>.<ext>`
-/// 同名文件自动追加 ` (2)`、` (3)`，不覆盖已有文件。
+/// 目录结构：
+/// ```
+/// <导出根目录>/
+/// └── 鸣潮_3608924541/        ← 壁纸名 + workshopID，保证同名壁纸不混在一起
+///     ├── 正常.jpg
+///     └── X-Ray.jpg
+/// ```
+/// 没有 X-Ray 的壁纸会保留原文件名（如 `贴图.png`）。
+/// 同一壁纸重复导出时覆盖同名文件，不产生 ` (2)` 副本。
 public enum ImageExporter {
     private static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp"]
 
     public static func export(from workDirectory: URL,
-                              to destination: URL,
-                              title: String,
+                              to root: URL,
+                              folderName: String,
                               xray: XRayLabelSummary,
                               fileManager: FileManager = .default) -> ImageExportResult {
-        var result = ImageExportResult(directory: destination)
+        let directory = root.appendingPathComponent(folderName, isDirectory: true)
+        var result = ImageExportResult(directory: directory)
 
         do {
-            try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
             return result
         }
@@ -38,14 +45,15 @@ public enum ImageExporter {
         let sources = collectSources(in: workDirectory, xray: xray, fileManager: fileManager)
         guard !sources.isEmpty else { return result }
 
-        let safeTitle = OutputLayout.sanitize(title)
-
         for source in sources {
             let ext = source.url.pathExtension.lowercased()
-            let baseName = safeTitle.isEmpty ? "image" : safeTitle
-            let stem = "\(baseName)_\(source.role)"
+            let target = directory.appendingPathComponent("\(source.role).\(ext)")
 
-            let target = uniqueURL(in: destination, stem: stem, ext: ext, fileManager: fileManager)
+            // 同一壁纸重复导出：覆盖同名文件，避免堆积 (2)(3)
+            if fileManager.fileExists(atPath: target.path) {
+                try? fileManager.removeItem(at: target)
+            }
+
             do {
                 try fileManager.copyItem(at: source.url, to: target)
                 result.files.append(target.lastPathComponent)
@@ -85,7 +93,7 @@ public enum ImageExporter {
             if !sources.isEmpty { return sources }
         }
 
-        // 2. 没有 X-Ray：取全部转换后的图片（排除预览图）
+        // 2. 没有 X-Ray：取全部转换后的图片（排除预览图），保留原文件名
         let enumerator = fileManager.enumerator(
             at: workDirectory,
             includingPropertiesForKeys: [.isRegularFileKey],
@@ -103,18 +111,5 @@ public enum ImageExporter {
         }
 
         return sources.sorted { $0.url.path < $1.url.path }
-    }
-
-    private static func uniqueURL(in directory: URL,
-                                  stem: String,
-                                  ext: String,
-                                  fileManager: FileManager) -> URL {
-        var candidate = directory.appendingPathComponent("\(stem).\(ext)")
-        var index = 2
-        while fileManager.fileExists(atPath: candidate.path) {
-            candidate = directory.appendingPathComponent("\(stem) (\(index)).\(ext)")
-            index += 1
-        }
-        return candidate
     }
 }

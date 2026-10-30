@@ -217,10 +217,11 @@ public final class JobQueue: ObservableObject {
             // 仅导出图片模式：把图片复制到目标目录，随后删除临时解包目录
             if let destination = job.imageExportDestination {
                 if report.verdict.isSuccess {
+                    let folderName = OutputLayout.folderName(for: job.item)
                     let result = ImageExporter.export(
                         from: job.request.outputDirectory,
                         to: destination,
-                        title: job.item.title,
+                        folderName: folderName,
                         xray: job.xray
                     )
                     job.exportedImages = result
@@ -231,7 +232,7 @@ public final class JobQueue: ObservableObject {
                     } else {
                         logSink.append(
                             jobID: jobID,
-                            text: "已导出 \(result.files.count) 张图片 → \(destination.path)：\(result.summary)",
+                            text: "已导出 \(result.files.count) 张图片 → \(folderName)/：\(result.summary)",
                             kind: .marker
                         )
                     }

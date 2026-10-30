@@ -74,8 +74,9 @@ private struct SettingsForm: View {
                         }
                     }
 
-                    Text("解包到临时目录，只把「正常层」和「X-Ray 层」复制到该目录，然后清理临时文件。"
-                         + "命名为 <标题>_正常.jpg / <标题>_X-Ray.jpg；没有 X-Ray 的壁纸导出全部图片。")
+                    Text("解包到临时目录，只把「正常层」和「X-Ray 层」复制出来，然后清理临时文件。"
+                         + "每张壁纸一个子文件夹（<标题>_<workshopID>），里面是 正常.jpg / X-Ray.jpg；"
+                         + "没有 X-Ray 的壁纸导出全部图片。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

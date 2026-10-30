@@ -356,25 +356,29 @@ do {
     xray.cleanFiles = ["未标题-1 拷贝 [正常].jpg"]
     xray.xrayFiles = ["未标题-2 拷贝 [X-Ray].jpg"]
 
-    let first = ImageExporter.export(from: work, to: dest, title: "测试壁纸", xray: xray)
-    checkEqual(first.files, ["测试壁纸_正常.jpg", "测试壁纸_X-Ray.jpg"], "按壁纸名重命名两层")
-    check(fm.fileExists(atPath: dest.appendingPathComponent("测试壁纸_正常.jpg").path), "正常层已写入")
-    check(fm.fileExists(atPath: dest.appendingPathComponent("测试壁纸_X-Ray.jpg").path), "X-Ray 层已写入")
+    let first = ImageExporter.export(from: work, to: dest, folderName: "测试壁纸_123", xray: xray)
+    let subdir = dest.appendingPathComponent("测试壁纸_123")
+    checkEqual(first.directory.lastPathComponent, "测试壁纸_123", "按壁纸名建子文件夹")
+    checkEqual(first.files, ["正常.jpg", "X-Ray.jpg"], "子文件夹内按图层角色命名")
+    check(fm.fileExists(atPath: subdir.appendingPathComponent("正常.jpg").path), "正常层已写入子文件夹")
+    check(fm.fileExists(atPath: subdir.appendingPathComponent("X-Ray.jpg").path), "X-Ray 层已写入子文件夹")
     check(!fm.fileExists(atPath: dest.appendingPathComponent("preview.jpg").path), "预览图不应被导出")
 
-    // 重复导出不应覆盖已有文件
-    let second = ImageExporter.export(from: work, to: dest, title: "测试壁纸", xray: xray)
-    checkEqual(second.files, ["测试壁纸_正常 (2).jpg", "测试壁纸_X-Ray (2).jpg"], "同名文件自动加序号")
+    // 同一壁纸重复导出：覆盖，不产生 (2)
+    let second = ImageExporter.export(from: work, to: dest, folderName: "测试壁纸_123", xray: xray)
+    checkEqual(second.files, ["正常.jpg", "X-Ray.jpg"], "重复导出覆盖同名文件")
+    let entries = (try? fm.contentsOfDirectory(atPath: subdir.path)) ?? []
+    checkEqual(entries.sorted(), ["X-Ray.jpg", "正常.jpg"], "子文件夹内不应出现 (2) 副本")
 
-    // 没有 X-Ray：导出全部图片
+    // 没有 X-Ray：导出全部图片，保留原文件名
     let plainWork = fm.temporaryDirectory.appendingPathComponent("pkd-export-plain-\(UUID().uuidString)")
     try? fm.createDirectory(at: plainWork.appendingPathComponent("materials"), withIntermediateDirectories: true)
     try? Data("a".utf8).write(to: plainWork.appendingPathComponent("materials/贴图.png"))
     try? Data("p".utf8).write(to: plainWork.appendingPathComponent("preview.jpg"))
 
     let plainDest = fm.temporaryDirectory.appendingPathComponent("pkd-export-plain-dest-\(UUID().uuidString)")
-    let plain = ImageExporter.export(from: plainWork, to: plainDest, title: "无Xray", xray: XRayLabelSummary())
-    checkEqual(plain.files, ["无Xray_贴图.png"], "无 X-Ray 时导出全部图片且排除预览图")
+    let plain = ImageExporter.export(from: plainWork, to: plainDest, folderName: "无Xray_9", xray: XRayLabelSummary())
+    checkEqual(plain.files, ["贴图.png"], "无 X-Ray 时导出全部图片且排除预览图")
 
     for dir in [work, dest, plainWork, plainDest] {
         try? fm.removeItem(at: dir)
