@@ -5,10 +5,20 @@ import PKDKit
 
 @MainActor
 final class AppModel: ObservableObject {
-    enum Tab: Hashable {
+    enum Tab: Hashable, CaseIterable, Identifiable {
         case detail
         case queue
         case storage
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .detail: return "详情"
+            case .queue: return "队列"
+            case .storage: return "存储"
+            }
+        }
     }
 
     enum EngineStatus: Equatable {
@@ -149,7 +159,6 @@ final class AppModel: ObservableObject {
             self.settings.confirmBeforeStart = false
             self.selection = [item.id]
             self.performExtraction([item])
-            self.selectedTab = .queue
 
             // 冒烟钩子不应把临时输出目录写进用户设置
             self.settings.outputRoot = originalOutputRoot
@@ -194,6 +203,11 @@ final class AppModel: ObservableObject {
 
     var extractableCount: Int {
         items.filter { $0.isExtractable }.count
+    }
+
+    /// 「队列」页签角标：未结束的任务数（排队中 + 进行中）
+    var queueBadgeCount: Int {
+        queue.jobs.filter { !$0.state.isTerminal }.count
     }
 
     // MARK: - 素材库
@@ -314,9 +328,8 @@ final class AppModel: ObservableObject {
         )
         if created.isEmpty {
             alertMessage = "所选项目都无法解包（缺少 pkg 或类型为视频）"
-        } else {
-            selectedTab = .queue
         }
+        // 刻意不切换页签：解包时保持当前视图，只在「队列」上显示角标
     }
 
     private func handleFinished(_ job: ExtractJob) {

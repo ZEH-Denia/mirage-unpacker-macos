@@ -10,13 +10,10 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
         } content: {
             VStack(spacing: 0) {
-                Picker("", selection: $model.selectedTab) {
-                    Text("详情").tag(AppModel.Tab.detail)
-                    Text(queueTitle).tag(AppModel.Tab.queue)
-                    Text("存储").tag(AppModel.Tab.storage)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                SegmentedTabs(
+                    selection: $model.selectedTab,
+                    badges: [.queue: model.queueBadgeCount]
+                )
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
 
@@ -56,11 +53,6 @@ struct RootView: View {
         } message: {
             Text(model.alertMessage ?? "")
         }
-    }
-
-    private var queueTitle: String {
-        let active = model.queue.jobs.filter { !$0.state.isTerminal }.count
-        return active > 0 ? "队列 (\(active))" : "队列"
     }
 
     private var confirmBinding: Binding<Bool> {
