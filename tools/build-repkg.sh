@@ -74,3 +74,27 @@ chmod +x "$OUT_DIR/repkg"
 echo
 echo "==> 构建完成: $OUT_DIR/repkg"
 "$OUT_DIR/repkg" version 2>&1 | head -3 || true
+
+# --- 4. 冒烟测试 ----------------------------------------------------------
+# 单文件发布必须把 ImageSharp / LZ4 等运行时依赖打进去，否则解包时会在
+# TEX → PNG 这一步抛 FileNotFoundException。这里直接跑一次真实转换来验证。
+TEST_PKG="$TOOLS_DIR/testdata/test_scene.pkg"
+if [ ! -f "$TEST_PKG" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$TOOLS_DIR/testdata/make_test_pkg.py" "$TOOLS_DIR/testdata" >/dev/null 2>&1 || true
+fi
+
+if [ -f "$TEST_PKG" ]; then
+  SMOKE_DIR="$(mktemp -d)"
+  "$OUT_DIR/repkg" extract -o "$SMOKE_DIR/out" "$TEST_PKG" >"$SMOKE_DIR/log.txt" 2>&1 || true
+  if find "$SMOKE_DIR/out" -name "*.png" 2>/dev/null | head -1 | grep -q .; then
+    echo "==> 冒烟通过：TEX → PNG 转换正常"
+  else
+    echo "!! 冒烟失败：纹理转换不可用，单文件很可能缺少运行时依赖" >&2
+    grep -iE "exception|could not load" "$SMOKE_DIR/log.txt" | head -3 >&2
+    rm -rf "$SMOKE_DIR"
+    exit 1
+  fi
+  rm -rf "$SMOKE_DIR"
+else
+  echo "!! 跳过冒烟测试：缺少 $TEST_PKG（可用 tools/testdata/make_test_pkg.py 生成）" >&2
+fi
