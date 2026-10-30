@@ -13,6 +13,7 @@ struct RootView: View {
                 Picker("", selection: $model.selectedTab) {
                     Text("详情").tag(AppModel.Tab.detail)
                     Text(queueTitle).tag(AppModel.Tab.queue)
+                    Text("存储").tag(AppModel.Tab.storage)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -26,6 +27,8 @@ struct RootView: View {
                     WallpaperDetailView()
                 case .queue:
                     JobQueueView()
+                case .storage:
+                    StorageView()
                 }
             }
             .navigationSplitViewColumnWidth(min: 440, ideal: 560)

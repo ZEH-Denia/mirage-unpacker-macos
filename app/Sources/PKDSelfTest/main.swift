@@ -385,6 +385,73 @@ do {
     }
 }
 
+// MARK: - 存储清理
+
+section("StorageScanner 扫描与安全校验")
+do {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent("pkd-storage-\(UUID().uuidString)")
+    let extractRoot = base.appendingPathComponent("Extracted")
+    let imageRoot = base.appendingPathComponent("Images")
+
+    func makeFolder(_ url: URL, files: Int) {
+        try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+        for i in 0..<files {
+            try? Data(repeating: 0x41, count: 1024).write(to: url.appendingPathComponent("f\(i).bin"))
+        }
+    }
+
+    makeFolder(extractRoot.appendingPathComponent("鸣潮_1"), files: 3)
+    makeFolder(extractRoot.appendingPathComponent("鸣潮_2"), files: 2)
+    makeFolder(imageRoot.appendingPathComponent("鸣潮_1"), files: 2)
+
+    let items = StorageScanner.scan(extractRoot: extractRoot, imageRoot: imageRoot, includeTemporary: false)
+    checkEqual(items.count, 3, "应扫描出 3 个子目录")
+    checkEqual(items.filter { $0.kind == .extracted }.count, 2, "解包产物 2 项")
+    checkEqual(items.filter { $0.kind == .images }.count, 1, "导出图片 1 项")
+
+    let first = items.first { $0.displayName == "鸣潮_1" && $0.kind == .extracted }
+    checkEqual(first?.fileCount ?? -1, 3, "文件计数")
+    check((first?.sizeBytes ?? 0) >= 3 * 1024, "占用按分配大小统计")
+
+    // 安全校验：只允许删根目录的直接子项
+    check(StorageScanner.isSafeToTrash(extractRoot.appendingPathComponent("鸣潮_1"),
+                                       extractRoot: extractRoot, imageRoot: imageRoot),
+          "根目录直接子项可删")
+    check(!StorageScanner.isSafeToTrash(extractRoot.appendingPathComponent("鸣潮_1/f0.bin"),
+                                        extractRoot: extractRoot, imageRoot: imageRoot),
+          "子文件不可删")
+    check(!StorageScanner.isSafeToTrash(extractRoot, extractRoot: extractRoot, imageRoot: imageRoot),
+          "根目录本身不可删")
+    check(!StorageScanner.isSafeToTrash(base.appendingPathComponent("别处"),
+                                        extractRoot: extractRoot, imageRoot: imageRoot),
+          "根目录之外不可删")
+
+    // 临时目录只认固定前缀
+    let tempDir = fm.temporaryDirectory
+    check(StorageScanner.isSafeToTrash(tempDir.appendingPathComponent("PKD-extract-abc"),
+                                       extractRoot: extractRoot, imageRoot: imageRoot),
+          "带前缀的临时目录可删")
+    check(!StorageScanner.isSafeToTrash(tempDir.appendingPathComponent("其他临时目录"),
+                                        extractRoot: extractRoot, imageRoot: imageRoot),
+          "无前缀的临时目录不可删")
+
+    // 不安全路径必须被拒绝，且不执行删除
+    let unsafeItem = StorageItem(
+        url: base.appendingPathComponent("别处"),
+        kind: .extracted,
+        displayName: "别处",
+        sizeBytes: 0,
+        fileCount: 0,
+        modified: nil
+    )
+    let outcome = StorageScanner.trash([unsafeItem], extractRoot: extractRoot, imageRoot: imageRoot)
+    checkEqual(outcome.trashed.count, 0, "越界路径不应被删除")
+    checkEqual(outcome.failed.count, 1, "越界路径应记录为失败")
+
+    try? fm.removeItem(at: base)
+}
+
 // MARK: - 集成：真实 repkg
 
 section("集成测试：真实 repkg")

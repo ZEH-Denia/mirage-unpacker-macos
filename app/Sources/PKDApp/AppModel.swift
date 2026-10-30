@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     enum Tab: Hashable {
         case detail
         case queue
+        case storage
     }
 
     enum EngineStatus: Equatable {
@@ -58,6 +59,13 @@ final class AppModel: ObservableObject {
     /// 壁纸是否含 X-Ray 效果（由后台预读包条目得出）
     @Published var xrayFlags: [String: Bool] = [:]
 
+    // 存储清理
+    @Published var storageItems: [StorageItem] = []
+    @Published var storageSelection: Set<String> = []
+    @Published var isScanningStorage = false
+    @Published var storageConfirmCount: Int?
+    @Published var storageResultMessage: String?
+
     let settings: SettingsStore
     let history: HistoryStore
     let log: LogSink
@@ -99,6 +107,12 @@ final class AppModel: ObservableObject {
         bootstrapEngine()
         refresh()
         runSmokeExtractionIfRequested()
+
+        // 冒烟钩子：PKD_SMOKE_TAB=storage 时直接打开存储页（用于截图/验证）
+        if ProcessInfo.processInfo.environment["PKD_SMOKE_TAB"] == "storage" {
+            selectedTab = .storage
+            refreshStorage()
+        }
     }
 
     /// 冒烟测试钩子：`PKD_SMOKE_PKG=<pkg 绝对路径>` 启动时自动解包该包。
@@ -112,11 +126,13 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard let self else { return }
 
+            let originalOutputRoot = self.settings.outputRoot
             if let output = ProcessInfo.processInfo.environment["PKD_SMOKE_OUT"], !output.isEmpty {
                 self.settings.outputRoot = URL(fileURLWithPath: output)
             }
 
             guard let item = self.items.first(where: { $0.pkgURL?.path == path }) else {
+                self.settings.outputRoot = originalOutputRoot
                 self.alertMessage = "冒烟测试：素材库中未找到 \(path)"
                 return
             }
@@ -125,6 +141,9 @@ final class AppModel: ObservableObject {
             self.selection = [item.id]
             self.performExtraction([item])
             self.selectedTab = .queue
+
+            // 冒烟钩子不应把临时输出目录写进用户设置
+            self.settings.outputRoot = originalOutputRoot
         }
     }
 
@@ -369,5 +388,84 @@ final class AppModel: ObservableObject {
     func copyPath(_ url: URL) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.path, forType: .string)
+    }
+
+    // MARK: - 存储清理
+
+    var selectedStorageItems: [StorageItem] {
+        storageItems.filter { storageSelection.contains($0.id) }
+    }
+
+    var selectedStorageBytes: Int64 {
+        selectedStorageItems.reduce(0) { $0 + $1.sizeBytes }
+    }
+
+    var storageTotalBytes: Int64 {
+        storageItems.reduce(0) { $0 + $1.sizeBytes }
+    }
+
+    func storageItems(of kind: StorageItem.Kind) -> [StorageItem] {
+        storageItems.filter { $0.kind == kind }
+    }
+
+    func refreshStorage() {
+        guard !isScanningStorage else { return }
+        isScanningStorage = true
+
+        let extractRoot = settings.outputRoot
+        let imageRoot = settings.imageExportRoot
+
+        Task { [weak self] in
+            let scanned = await Task.detached(priority: .userInitiated) {
+                StorageScanner.scan(extractRoot: extractRoot, imageRoot: imageRoot)
+            }.value
+
+            guard let self else { return }
+            self.storageItems = scanned
+            self.storageSelection = self.storageSelection.filter { id in
+                scanned.contains { $0.id == id }
+            }
+            self.isScanningStorage = false
+        }
+    }
+
+    func requestTrashSelection() {
+        let items = selectedStorageItems
+        guard !items.isEmpty else { return }
+        storageConfirmCount = items.count
+    }
+
+    func performTrashSelection() {
+        let items = selectedStorageItems
+        guard !items.isEmpty else { return }
+
+        let extractRoot = settings.outputRoot
+        let imageRoot = settings.imageExportRoot
+
+        let outcome = StorageScanner.trash(items, extractRoot: extractRoot, imageRoot: imageRoot)
+
+        // 目录没了，历史记录里的「已解包」标记也要跟着失效
+        let trashedPaths = Set(outcome.trashed.map { $0.url.path })
+        let staleIDs = history.entries
+            .filter { trashedPaths.contains($0.value.outputPath) }
+            .map { $0.key }
+        for id in staleIDs {
+            history.remove(id: id)
+        }
+
+        storageSelection = []
+        refreshStorage()
+
+        if outcome.failed.isEmpty {
+            storageResultMessage = "已把 \(outcome.trashed.count) 项移到废纸篓"
+        } else {
+            storageResultMessage = "已移入废纸篓 \(outcome.trashed.count) 项，"
+                + "\(outcome.failed.count) 项失败：\n" + outcome.failed.prefix(3).joined(separator: "\n")
+        }
+    }
+
+    func selectAllStorage(_ kind: StorageItem.Kind?) {
+        let targets = kind.map { storageItems(of: $0) } ?? storageItems
+        storageSelection = Set(targets.map { $0.id })
     }
 }
