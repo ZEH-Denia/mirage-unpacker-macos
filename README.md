@@ -41,7 +41,9 @@ Mirage 订阅下载
 
 [![Release](https://img.shields.io/github/v/release/5w57ywswf7-cloud/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos/releases/latest)
 
-不想自己编译的话，直接下载 **`PKD-1.0.0-macos-arm64.zip`**（Apple Silicon，约 29 MB）：
+不想自己编译的话，直接从 [Releases](https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon，约 29 MB）。
+
+资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.zip`（GitHub 会把文件名里的空格转成点号，所以用连字符）。
 
 1. 解压，把 `PKD.app` 拖进 `/Applications`
 2. 首次打开：**右键点图标 → 打开**（ad-hoc 签名、未公证，属正常现象）
@@ -208,6 +210,7 @@ app/
   Sources/PKDApp/                SwiftUI 界面
   Sources/PKDSelfTest/           自测可执行目标（CLT 环境无 XCTest）
   scripts/make-app.sh            组装 .app + 图标 + ad-hoc 签名
+  scripts/package-release.sh     打包 Release 资产（统一命名）
   scripts/verify.sh              回归验证
 tools/
   build-repkg.sh                 编译引擎（clone 上游 + 应用补丁）
