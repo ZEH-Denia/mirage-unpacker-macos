@@ -95,7 +95,7 @@ index 2a105a2..144e4e2 100644
                  InfoTex(file);
              else
 diff --git a/RePKG/RePKG.csproj b/RePKG/RePKG.csproj
-index 892f7ac..0f38380 100644
+index 892f7ac..041f76a 100644
 --- a/RePKG/RePKG.csproj
 +++ b/RePKG/RePKG.csproj
 @@ -2,9 +2,15 @@
@@ -115,14 +115,16 @@ index 892f7ac..0f38380 100644
      </PropertyGroup>
      
      <ItemGroup>
-@@ -15,10 +21,6 @@
+@@ -14,10 +20,8 @@
+     
      <ItemGroup>
          <PackageReference Include="CommandLineParser" Version="2.9.1" />
-     </ItemGroup>
+-    </ItemGroup>
 -    
 -    <ItemGroup>
 -      <Reference Include="Microsoft.CSharp" />
--    </ItemGroup>
++        <!-- 显式引用：传递依赖在全新 restore 时不保证流入本项目（会导致 CS0246） -->
++        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+     </ItemGroup>
  
      <ItemGroup>
-         <None Include="$(ProjectDir)/../THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
