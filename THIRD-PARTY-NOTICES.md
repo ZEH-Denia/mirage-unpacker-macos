@@ -58,6 +58,13 @@ ImageSharp 的版权声明：`Copyright (c) Six Labors`。
 界面使用 Apple 系统框架（SwiftUI / AppKit / ImageIO / CoreGraphics / Compression），
 随 macOS 提供，不受本项目分发。
 
+## 4. 相关但未使用的项目
+
+[Mirage](https://github.com/laobamac/MirageWallpaper)（GPL-3.0）是本项目的配套播放器，
+本项目**没有**引用、链接或修改它的任何代码，只是读取它下载到
+`~/Library/Application Support/Mirage/Workshop/content/431960` 的壁纸文件。
+两者是彼此独立的程序，因此本项目采用 MIT 协议不受 GPL-3.0 影响。
+
 ---
 
 ## 关于素材内容

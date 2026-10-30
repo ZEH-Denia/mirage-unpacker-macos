@@ -8,6 +8,35 @@ Built with SwiftUI; uses RePKG as the unpacking engine.
 
 ---
 
+## 与 Mirage 的关系
+
+本项目是 [Mirage](https://github.com/laobamac/MirageWallpaper) 的**配套工具**，不是替代品，也不是它的分支。
+
+| | 做什么 |
+|---|---|
+| [Mirage](https://github.com/laobamac/MirageWallpaper) | macOS 上的动态壁纸引擎，负责把 Wallpaper Engine 的壁纸**播放**到桌面（支持 web / video / scene） |
+| 本项目 | 只负责**解包与查看**：浏览 Mirage 已下载的素材库、把 `scene.pkg` 拆成图片和模型、分离 X-Ray 图层、清理占用的磁盘空间 |
+
+两者通过文件系统协作，没有进程间通信：
+
+```
+Mirage 订阅下载
+      ↓
+~/Library/Application Support/Mirage/Workshop/content/431960/<workshopID>/
+      │   project.json / preview.jpg / scene.pkg
+      ↓
+本项目读取这个目录 → 解包 / 导出图片 / 清理
+```
+
+`431960` 是 Wallpaper Engine 在 Steam 创意工坊的 AppID，Mirage 沿用了同一套目录结构，所以本工具读的是 Mirage 的数据目录。
+
+**独立性**：本项目不包含 Mirage 的任何代码，不修改 Mirage 的文件，也不依赖它运行——删掉 Mirage 之后本工具照样能用（只是没有壁纸可解包）。Mirage 采用 GPL-3.0，本项目采用 MIT，两者是彼此独立的程序，仅共享文件系统上的目录约定。
+
+- Mirage 仓库：https://github.com/laobamac/MirageWallpaper
+- Mirage 文档：https://mirage.simplehac.cn
+
+---
+
 ## 下载
 
 [![Release](https://img.shields.io/github/v/release/5w57ywswf7-cloud/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos/releases/latest)
