@@ -8,6 +8,20 @@ Built with SwiftUI; uses RePKG as the unpacking engine.
 
 ---
 
+## 下载
+
+[![Release](https://img.shields.io/github/v/release/5w57ywswf7-cloud/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos/releases/latest)
+
+不想自己编译的话，直接下载 **`PKD-1.0.0-macos-arm64.zip`**（Apple Silicon，约 29 MB）：
+
+1. 解压，把 `PKD.app` 拖进 `/Applications`
+2. 首次打开：**右键点图标 → 打开**（ad-hoc 签名、未公证，属正常现象）
+3. 若仍被拦：`xattr -dr com.apple.quarantine /Applications/PKD.app`
+
+> Intel Mac 暂无预编译包，请按下方「构建」从源码编译。
+
+---
+
 ## 功能
 
 - **素材库浏览**：自动扫描 Mirage 的 `431960` 目录，读取 `project.json` 显示标题、预览图、包大小、内容分级
