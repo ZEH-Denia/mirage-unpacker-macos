@@ -46,7 +46,16 @@ final class AppModel: ObservableObject {
     // MARK: - 状态
 
     @Published var items: [WallpaperItem] = []
-    @Published var selection: Set<String> = []
+    @Published var selection: Set<String> = [] {
+        didSet {
+            // 解包后界面停在「队列」，此时点另一个壁纸是想看它的详情，
+            // 自动切回详情页，省掉手动点一次
+            guard selection.count == 1, oldValue != selection else { return }
+            if selectedTab == .queue {
+                selectedTab = .detail
+            }
+        }
+    }
     @Published var searchText: String = ""
     @Published var filter: LibraryFilter = .all
     @Published var infoCache: [String: PkgInfo] = [:]
