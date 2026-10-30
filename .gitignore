@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode / SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+*.xcuserstate
+
+# 构建产物
+app/dist/
+tools/bin/
+tools/repkg/
+
+# 解包产物与素材（体积大、且可能含受版权保护的内容）
+extracted/
+tools/testdata/out/
+tools/testdata/*.pkg
+
+# 本地工具链 / 编辑器
+.workbuddy-ai/
+.vscode/
+.idea/
+*.swp

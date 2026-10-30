@@ -1,0 +1,128 @@
+diff --git a/RePKG.Application/RePKG.Application.csproj b/RePKG.Application/RePKG.Application.csproj
+index 64b2f6b..1adce4f 100644
+--- a/RePKG.Application/RePKG.Application.csproj
++++ b/RePKG.Application/RePKG.Application.csproj
+@@ -13,6 +13,6 @@
+         <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+         <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+         <PackageReference Include="SixLabors.ImageSharp" Version="2.1.9" />
+-        <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
++        <!-- 移除 System.Drawing.Common 9.0.0：代码中并未使用，且该包在 macOS/Linux 上会抛 PlatformNotSupportedException -->
+     </ItemGroup>
+ </Project>
+diff --git a/RePKG.Tests/RePKG.Tests.csproj b/RePKG.Tests/RePKG.Tests.csproj
+index b5df6b5..7848d0a 100644
+--- a/RePKG.Tests/RePKG.Tests.csproj
++++ b/RePKG.Tests/RePKG.Tests.csproj
+@@ -1,6 +1,6 @@
+ ﻿<Project Sdk="Microsoft.NET.Sdk">
+     <PropertyGroup>
+-        <TargetFramework>net472</TargetFramework>
++        <TargetFramework>net8.0</TargetFramework>
+         <IsPackable>false</IsPackable>
+         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+     </PropertyGroup>
+diff --git a/RePKG/Command/Extract.cs b/RePKG/Command/Extract.cs
+index 8e4efce..b2bd89b 100644
+--- a/RePKG/Command/Extract.cs
++++ b/RePKG/Command/Extract.cs
+@@ -199,8 +199,17 @@ namespace RePKG.Command
+             if (appendFolderName)
+                 GetProjectFolderNameAndPreviewImage(file, defaultProjectName, out outputDirectory, out preview);
+             else
++            {
+                 outputDirectory = _options.OutputDirectory;
+ 
++                // 单文件解包时也要读取 project.json，否则 -c 无法复制 preview.jpg
++                if (_options.CopyProject)
++                {
++                    var unusedTitle = string.Empty;
++                    GetProjectInfo(file, ref unusedTitle, ref preview);
++                }
++            }
++
+             // Extract package entries
+             var entries = FilterEntries(package.Entries);
+             foreach (var entry in entries)
+@@ -310,9 +319,17 @@ namespace RePKG.Command
+             if (projectJson.Length == 0 || !projectJson[0].Exists)
+                 return;
+ 
+-            dynamic json = JsonConvert.DeserializeObject(File.ReadAllText(projectJson[0].FullName));
+-            title = json.title;
+-            preview = json.preview;
++            // project.json 可能格式异常，读取失败不应中断整个解包流程
++            try
++            {
++                dynamic json = JsonConvert.DeserializeObject(File.ReadAllText(projectJson[0].FullName));
++                title = json.title;
++                preview = json.preview;
++            }
++            catch (Exception e)
++            {
++                Console.WriteLine($"* Failed to read project.json: {e.Message}");
++            }
+         }
+ 
+         private static void GetProjectFolderNameAndPreviewImage(FileInfo packageFile, string defaultProjectName,
+@@ -335,6 +352,14 @@ namespace RePKG.Command
+             }
+ 
+             outputDirectory = Path.Combine(_options.OutputDirectory, defaultProjectName);
++
++            // 原实现只有加 -n 时才会读取 project.json，导致单独使用 -c 时 preview 为空、
++            // preview.jpg 永远不会被复制（与 --copyproject 的文档描述不符）。这里仅为取 preview 读一次。
++            if (_options.CopyProject)
++            {
++                var unusedTitle = defaultProjectName;
++                GetProjectInfo(packageFile, ref unusedTitle, ref preview);
++            }
+         }
+ 
+         private static ITex LoadTex(byte[] bytes, string name)
+diff --git a/RePKG/Command/Info.cs b/RePKG/Command/Info.cs
+index 2a105a2..144e4e2 100644
+--- a/RePKG/Command/Info.cs
++++ b/RePKG/Command/Info.cs
+@@ -76,7 +76,8 @@ namespace RePKG.Command
+         private static void InfoFile(FileInfo file)
+         {
+             if (file.Extension.Equals(".pkg", StringComparison.OrdinalIgnoreCase))
+-                InfoPkg(file, Path.GetFullPath(file.Name));
++                // 原为 Path.GetFullPath(file.Name)，会把路径解析到当前工作目录，导致标题显示错误路径
++                InfoPkg(file, file.FullName);
+             else if (file.Extension.Equals(".tex", StringComparison.OrdinalIgnoreCase))
+                 InfoTex(file);
+             else
+diff --git a/RePKG/RePKG.csproj b/RePKG/RePKG.csproj
+index 892f7ac..0f38380 100644
+--- a/RePKG/RePKG.csproj
++++ b/RePKG/RePKG.csproj
+@@ -2,9 +2,15 @@
+     <PropertyGroup>
+         <RootNamespace>RePKG</RootNamespace>
+         <OutputType>Exe</OutputType>
+-        <TargetFramework>net472</TargetFramework>
++        <!-- 原为 net472（仅 Windows）。改为 net8.0 以便在 macOS/Linux 原生构建运行 -->
++        <TargetFramework>net8.0</TargetFramework>
+         <Version>0.4.0</Version>
+         <Copyright>Copyright © NotScuffed 2025</Copyright>
++        <AssemblyName>repkg</AssemblyName>
++        <RootNamespace>RePKG</RootNamespace>
++        <Nullable>disable</Nullable>
++        <InvariantGlobalization>true</InvariantGlobalization>
++        <RollForward>LatestMajor</RollForward>
+     </PropertyGroup>
+     
+     <ItemGroup>
+@@ -15,10 +21,6 @@
+     <ItemGroup>
+         <PackageReference Include="CommandLineParser" Version="2.9.1" />
+     </ItemGroup>
+-    
+-    <ItemGroup>
+-      <Reference Include="Microsoft.CSharp" />
+-    </ItemGroup>
+ 
+     <ItemGroup>
+         <None Include="$(ProjectDir)/../THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
