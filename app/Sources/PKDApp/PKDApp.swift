@@ -9,6 +9,17 @@ struct PKDApp: App {
     @StateObject private var accessibility = AccessibilitySettings()
 
     init() {
+        // 本应用统一使用 overlay 滚动条。
+        //
+        // 系统偏好是「显示滚动条：自动」且接了鼠标时，`NSScroller.preferredScrollerStyle`
+        // 就是 `.legacy`——AppKit 会给每个滚动视图画一条常驻的白色轨道。侧栏是半透明灰底，
+        // 这条白底非常突兀；而 SwiftUI 的列表每次更新都会把 `scrollerStyle` 重置回系统偏好，
+        // 所以逐个滚动视图设 `.overlay` 会被立刻撤销（实测 1 秒内退回 legacy）。
+        //
+        // 这个键只写进应用自己的 defaults 域，不改系统设置；AppKit 读到后
+        // preferredScrollerStyle 直接变成 overlay，SwiftUI 再怎么重置也只会重置成 overlay。
+        UserDefaults.standard.set("WhenScrolling", forKey: "AppleShowScrollBars")
+
         // 1.3.0 及更早版本的皮肤参数已废弃
         AppearanceSettings.purgeLegacyKeys()
     }

@@ -56,13 +56,15 @@ struct WindowConfigurator: NSViewRepresentable {
 
 // MARK: - 滚动条外观
 
-/// 把窗口内所有 `NSScrollView` 统一改成 overlay 滚动条。
+/// 兜底：把窗口内所有 `NSScrollView` 统一改成 overlay 滚动条。
 ///
-/// 系统「显示滚动条：自动」+ 鼠标时，AppKit 画的是旧式滚动条：
-/// 右侧会常驻一条浅色轨道矩形，压在玻璃面板上非常突兀。
-/// overlay 样式只在滚动时浮出细滑块，不占位、不画轨道。
+/// 真正生效的开关在 `PKDApp.init()` 里——把 `AppleShowScrollBars` 设成 `WhenScrolling`
+/// 写进本应用的 defaults 域，`NSScroller.preferredScrollerStyle` 才会变成 `.overlay`。
+/// 只在这里逐个滚动视图设 `.overlay` 是没用的：SwiftUI 的 `ListCoreScrollView`
+/// 每次更新都会把 `scrollerStyle` 重置回系统偏好（实测设完 1 秒内就退回 legacy）。
 ///
-/// 这里显式覆盖系统偏好——用户明确要求去掉那条白底。
+/// 这个类型保留下来做两件事：给小号滚动条设置 `controlSize`，以及在个别
+/// 不走系统偏好的滚动视图（例如设置窗口）上再压一次。
 struct WindowScrollStyler: NSViewRepresentable {
     final class Coordinator {
         var lastRun = Date.distantPast
