@@ -65,6 +65,10 @@ public struct RepkgOutputParser {
             fatal = .inputPathDoesNotExist
             return .fatal(.inputPathDoesNotExist)
 
+        case "Unsafe package entry path":
+            fatal = .unsafePackageEntryPath
+            return .fatal(.unsafePackageEntryPath)
+
         case "Failed to read texture":
             warningCount += 1
             stackTraceLines = 1

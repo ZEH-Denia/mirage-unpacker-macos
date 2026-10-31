@@ -83,7 +83,7 @@ private struct SettingsForm: View {
                     value: $settings.maxConcurrentJobs,
                     in: 1...2
                 )
-                .onChange(of: settings.maxConcurrentJobs) { newValue in
+                .onChange(of: settings.maxConcurrentJobs) { _, newValue in
                     model.queue.concurrency = newValue
                 }
                 Text("建议保持 1：单个大包解包时内存峰值可达 2–3 GB")

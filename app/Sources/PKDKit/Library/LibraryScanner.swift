@@ -1,6 +1,7 @@
 import Foundation
 
-public struct LibraryScanner: Sendable {
+// FileManager is thread-safe; each scan uses it synchronously from one detached task.
+public struct LibraryScanner: @unchecked Sendable {
     public static let defaultRoot = URL(fileURLWithPath: NSHomeDirectory())
         .appendingPathComponent("Library/Application Support/Mirage/Workshop/content/431960")
 

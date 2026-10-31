@@ -1,5 +1,21 @@
 import Foundation
 
+private func safePackageRelativeURL(_ path: String, in root: URL) -> URL? {
+    guard !path.isEmpty, !path.contains("\0"),
+          !path.hasPrefix("/"), !path.hasPrefix("\\") else { return nil }
+
+    let components = path.replacingOccurrences(of: "\\", with: "/")
+        .split(separator: "/", omittingEmptySubsequences: false)
+    guard !components.isEmpty,
+          components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+
+    let candidate = components.reduce(root) { $0.appendingPathComponent(String($1)) }
+    let rootPath = StorageScanner.canonicalPath(root)
+    let candidatePath = StorageScanner.canonicalPath(candidate)
+    guard candidatePath.hasPrefix(rootPath + "/") else { return nil }
+    return candidate
+}
+
 /// 一处 X-Ray 效果：挂在某个对象上的 effect，把第二张纹理按鼠标位置透出来。
 public struct XRayLayer: Sendable, Equatable {
     public let objectName: String
@@ -87,9 +103,11 @@ public enum XRayAnalyzer {
     private static func resolveObjectTexture(_ object: [String: Any], in directory: URL) -> String? {
         guard let image = object["image"] as? String else { return nil }
 
-        if let modelJSON = loadJSON(directory.appendingPathComponent(image)),
+        if let modelURL = safePackageRelativeURL(image, in: directory),
+           let modelJSON = loadJSON(modelURL),
            let materialPath = modelJSON["material"] as? String,
-           let materialJSON = loadJSON(directory.appendingPathComponent(materialPath)),
+           let materialURL = safePackageRelativeURL(materialPath, in: directory),
+           let materialJSON = loadJSON(materialURL),
            let passes = materialJSON["passes"] as? [[String: Any]],
            let textures = passes.first?["textures"] as? [Any],
            let first = textures.first as? String {
@@ -144,10 +162,13 @@ public enum XRayLabeler {
         let baseName = (texture as NSString).lastPathComponent
 
         // 纹理名可能带子目录（如 effects/xxx），优先按原样找，再退回 materials/ 下
-        let candidates: [URL] = [
-            directory.appendingPathComponent(texture),
-            materials.appendingPathComponent(baseName),
-        ]
+        var candidates: [URL] = []
+        if let relative = safePackageRelativeURL(texture, in: directory) {
+            candidates.append(relative)
+        }
+        if let fallback = safePackageRelativeURL(baseName, in: materials) {
+            candidates.append(fallback)
+        }
 
         for candidate in candidates {
             for ext in imageExtensions {

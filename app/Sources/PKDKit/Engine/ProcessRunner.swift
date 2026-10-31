@@ -97,10 +97,7 @@ public final class RealProcessRunner: ProcessRunning, @unchecked Sendable {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        stateLock.lock()
-        self.process = process
-        self.cancelled = false
-        stateLock.unlock()
+        install(process)
 
         let box = LineBox()
         let group = DispatchGroup()
@@ -110,9 +107,7 @@ public final class RealProcessRunner: ProcessRunning, @unchecked Sendable {
         do {
             try process.run()
         } catch {
-            stateLock.lock()
-            self.process = nil
-            stateLock.unlock()
+            clearProcess()
             throw error
         }
 
@@ -132,14 +127,11 @@ public final class RealProcessRunner: ProcessRunning, @unchecked Sendable {
         }
 
         // 两个读循环都读到 EOF 并冲刷完残留行，才认为输出投递完毕
-        group.wait()
+        Self.waitForReaders(group)
 
         let duration = Date().timeIntervalSince(startedAt)
 
-        stateLock.lock()
-        let wasCancelled = cancelled
-        self.process = nil
-        stateLock.unlock()
+        let wasCancelled = clearProcessAndReadCancellation()
 
         return ProcessOutput(
             exitCode: process.terminationStatus,
@@ -173,6 +165,31 @@ public final class RealProcessRunner: ProcessRunning, @unchecked Sendable {
         cancelled = true
         stateLock.unlock()
         return current
+    }
+
+    private func install(_ process: Process) {
+        stateLock.lock()
+        self.process = process
+        cancelled = false
+        stateLock.unlock()
+    }
+
+    private func clearProcess() {
+        stateLock.lock()
+        process = nil
+        stateLock.unlock()
+    }
+
+    private func clearProcessAndReadCancellation() -> Bool {
+        stateLock.lock()
+        let wasCancelled = cancelled
+        process = nil
+        stateLock.unlock()
+        return wasCancelled
+    }
+
+    private static func waitForReaders(_ group: DispatchGroup) {
+        group.wait()
     }
 
     public func cancelImmediately() {

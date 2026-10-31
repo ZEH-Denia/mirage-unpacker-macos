@@ -5,7 +5,7 @@
 #
 # 上游 notscuffed/repkg 只面向 Windows（net472）。本脚本会：
 #   1. 首次运行时 clone 上游到 tools/repkg
-#   2. 应用 tools/repkg-macos.patch（改目标框架、去掉 Windows 专属依赖、修两个 bug）
+#   2. 应用 tools/repkg-macos.patch（移植到 .NET 8、修复上游问题并限制解包路径）
 #   3. 以 self-contained 单文件方式发布到 tools/bin/repkg
 set -euo pipefail
 
@@ -22,13 +22,17 @@ if [ ! -d "$SRC_DIR" ]; then
   git clone --depth 1 "$UPSTREAM" "$SRC_DIR"
 fi
 
-if [ -f "$PATCH_FILE" ] && git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
+if [ ! -f "$PATCH_FILE" ]; then
+  echo "!! 缺少 macOS 补丁：$PATCH_FILE" >&2
+  exit 1
+elif git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
   echo "==> 应用 macOS 补丁"
   git -C "$SRC_DIR" apply "$PATCH_FILE"
 elif git -C "$SRC_DIR" apply --check --reverse "$PATCH_FILE" 2>/dev/null; then
   echo "==> 补丁已应用过，跳过"
 else
-  echo "!! 补丁无法应用（上游可能已更新）。可手动检查 $PATCH_FILE" >&2
+  echo "!! 补丁无法应用（上游可能已更新）。检查 $PATCH_FILE 后再构建。" >&2
+  exit 1
 fi
 
 # --- 2. 定位 .NET SDK -----------------------------------------------------
@@ -71,6 +75,11 @@ echo "==> RID:    $RID"
   -o "$OUT_DIR"
 
 chmod +x "$OUT_DIR/repkg"
+if [ ! -f "$SRC_DIR/THIRD-PARTY-NOTICES.txt" ]; then
+  echo "!! 上游缺少 THIRD-PARTY-NOTICES.txt，无法生成完整发布许可声明。" >&2
+  exit 1
+fi
+cp "$SRC_DIR/THIRD-PARTY-NOTICES.txt" "$OUT_DIR/REPKG-THIRD-PARTY-NOTICES.txt"
 echo
 echo "==> 构建完成: $OUT_DIR/repkg"
 "$OUT_DIR/repkg" version 2>&1 | head -3 || true

@@ -1,12 +1,24 @@
 diff --git a/RePKG.Application/RePKG.Application.csproj b/RePKG.Application/RePKG.Application.csproj
-index 64b2f6b..1adce4f 100644
+index 64b2f6b..c9152a1 100644
 --- a/RePKG.Application/RePKG.Application.csproj
 +++ b/RePKG.Application/RePKG.Application.csproj
-@@ -13,6 +13,6 @@
+@@ -12,7 +12,17 @@
+     <ItemGroup>
          <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
          <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-         <PackageReference Include="SixLabors.ImageSharp" Version="2.1.9" />
+-        <PackageReference Include="SixLabors.ImageSharp" Version="2.1.9" />
 -        <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
++        <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
++        <!--
++            RePKG consumes decoded TEX pixel buffers and writes PNG/GIF; it does not
++            decode TIFF/ICC input or call HistogramEqualization. Suppress only those
++            ImageSharp advisories whose vulnerable APIs are not used here.
++        -->
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" />
 +        <!-- 移除 System.Drawing.Common 9.0.0：代码中并未使用，且该包在 macOS/Linux 上会抛 PlatformNotSupportedException -->
      </ItemGroup>
  </Project>
@@ -23,10 +35,59 @@ index b5df6b5..7848d0a 100644
          <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
      </PropertyGroup>
 diff --git a/RePKG/Command/Extract.cs b/RePKG/Command/Extract.cs
-index 8e4efce..b2bd89b 100644
+index 8e4efce..5b41b4a 100644
 --- a/RePKG/Command/Extract.cs
 +++ b/RePKG/Command/Extract.cs
-@@ -199,8 +199,17 @@ namespace RePKG.Command
+@@ -54,25 +54,36 @@ namespace RePKG.Command
+             var fileInfo = new FileInfo(options.Input);
+             var directoryInfo = new DirectoryInfo(options.Input);
+ 
+-            if (!fileInfo.Exists)
++            try
+             {
+-                if (directoryInfo.Exists)
++                if (!fileInfo.Exists)
+                 {
+-                    if (_options.TexDirectory)
+-                        ExtractTexDirectory(directoryInfo);
++                    if (directoryInfo.Exists)
++                    {
++                        if (_options.TexDirectory)
++                            ExtractTexDirectory(directoryInfo);
++                        else
++                            ExtractPkgDirectory(directoryInfo);
++                    }
+                     else
+-                        ExtractPkgDirectory(directoryInfo);
+-
+-                    Console.WriteLine("Done");
+-                    return;
++                    {
++                        Console.WriteLine("Input file not found");
++                        Console.WriteLine(options.Input);
++                        return;
++                    }
+                 }
+-
+-                Console.WriteLine("Input file not found");
+-                Console.WriteLine(options.Input);
++                else
++                {
++                    ExtractFile(fileInfo);
++                }
++            }
++            catch (InvalidDataException e) when (e.Message.StartsWith("Unsafe package entry path: ", StringComparison.Ordinal))
++            {
++                Console.WriteLine("Unsafe package entry path");
++                Console.WriteLine(e.Message);
+                 return;
+             }
+ 
+-            ExtractFile(fileInfo);
+             Console.WriteLine("Done");
+         }
+ 
+@@ -199,8 +210,17 @@ namespace RePKG.Command
              if (appendFolderName)
                  GetProjectFolderNameAndPreviewImage(file, defaultProjectName, out outputDirectory, out preview);
              else
@@ -44,7 +105,57 @@ index 8e4efce..b2bd89b 100644
              // Extract package entries
              var entries = FilterEntries(package.Entries);
              foreach (var entry in entries)
-@@ -310,9 +319,17 @@ namespace RePKG.Command
+@@ -267,6 +287,13 @@ namespace RePKG.Command
+ 
+             var filePath = filePathWithoutExtension + entry.Extension;
+ 
++            var rootPath = ResolveExistingLinks(outputDirectory);
++            var fullPath = ResolveExistingLinks(filePathWithoutExtension);
++            var relativePath = Path.GetRelativePath(rootPath, fullPath);
++            if (Path.IsPathRooted(relativePath) || relativePath == ".." ||
++                relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
++                throw new InvalidDataException($"Unsafe package entry path: {entry.FullPath}");
++
+             Directory.CreateDirectory(Path.GetDirectoryName(filePathWithoutExtension));
+ 
+             if (!_options.Overwrite && File.Exists(filePath))
+@@ -300,6 +327,35 @@ namespace RePKG.Command
+             }
+         }
+ 
++        private static string ResolveExistingLinks(string path)
++        {
++            var fullPath = Path.GetFullPath(path);
++            var pathRoot = Path.GetPathRoot(fullPath);
++            var current = pathRoot;
++            var relative = Path.GetRelativePath(pathRoot, fullPath);
++
++            foreach (var component in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
++            {
++                if (string.IsNullOrEmpty(component) || component == ".")
++                    continue;
++
++                current = Path.Combine(current, component);
++                FileSystemInfo info = Directory.Exists(current)
++                    ? new DirectoryInfo(current)
++                    : new FileInfo(current);
++
++                if (info.Exists && info.LinkTarget != null)
++                {
++                    var resolved = info.ResolveLinkTarget(true);
++                    if (resolved == null)
++                        throw new IOException($"Unable to resolve output path: {current}");
++                    current = Path.GetFullPath(resolved.FullName);
++                }
++            }
++
++            return Path.GetFullPath(current);
++        }
++
+         private static void GetProjectInfo(FileInfo packageFile, ref string title, ref string preview)
+         {
+             var directory = packageFile.Directory;
+@@ -310,9 +366,17 @@ namespace RePKG.Command
              if (projectJson.Length == 0 || !projectJson[0].Exists)
                  return;
  
@@ -65,7 +176,7 @@ index 8e4efce..b2bd89b 100644
          }
  
          private static void GetProjectFolderNameAndPreviewImage(FileInfo packageFile, string defaultProjectName,
-@@ -335,6 +352,14 @@ namespace RePKG.Command
+@@ -335,6 +399,14 @@ namespace RePKG.Command
              }
  
              outputDirectory = Path.Combine(_options.OutputDirectory, defaultProjectName);
@@ -80,6 +191,13 @@ index 8e4efce..b2bd89b 100644
          }
  
          private static ITex LoadTex(byte[] bytes, string name)
+@@ -413,4 +485,4 @@ namespace RePKG.Command
+         [Value(0, Required = true, HelpText = "Path to file/directory", MetaName = "Input")]
+         public string Input { get; set; }
+     }
+-}
+\ No newline at end of file
++}
 diff --git a/RePKG/Command/Info.cs b/RePKG/Command/Info.cs
 index 2a105a2..144e4e2 100644
 --- a/RePKG/Command/Info.cs
@@ -95,7 +213,7 @@ index 2a105a2..144e4e2 100644
                  InfoTex(file);
              else
 diff --git a/RePKG/RePKG.csproj b/RePKG/RePKG.csproj
-index 892f7ac..848642a 100644
+index 892f7ac..08fb8bc 100644
 --- a/RePKG/RePKG.csproj
 +++ b/RePKG/RePKG.csproj
 @@ -2,9 +2,15 @@
@@ -115,14 +233,10 @@ index 892f7ac..848642a 100644
      </PropertyGroup>
      
      <ItemGroup>
-@@ -14,10 +20,15 @@
+@@ -14,13 +20,27 @@
      
      <ItemGroup>
          <PackageReference Include="CommandLineParser" Version="2.9.1" />
--    </ItemGroup>
--    
--    <ItemGroup>
--      <Reference Include="Microsoft.CSharp" />
 +        <!--
 +            显式声明运行时依赖：这些包原本只由 RePKG.Application 引用，
 +            全新 restore 时既不会流入本项目的编译引用（CS0246），
@@ -130,8 +244,24 @@ index 892f7ac..848642a 100644
 +            本地开发时因 obj/ 残留旧资产而"恰好"可用，容易漏掉。
 +        -->
 +        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-+        <PackageReference Include="SixLabors.ImageSharp" Version="2.1.9" />
++        <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
 +        <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+     </ItemGroup>
+-    
++
+     <ItemGroup>
+-      <Reference Include="Microsoft.CSharp" />
++        <!-- Same non-reachable ImageSharp APIs described in RePKG.Application.csproj. -->
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" />
++        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" />
      </ItemGroup>
  
      <ItemGroup>
+         <None Include="$(ProjectDir)/../THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+     </ItemGroup>
+-</Project>
+\ No newline at end of file
++</Project>

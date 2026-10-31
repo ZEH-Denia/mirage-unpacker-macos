@@ -11,7 +11,7 @@
 - 作者：notscuffed
 - 许可证：**MIT**
 - 用途：本项目通过子进程调用它完成 `scene.pkg` 解包与纹理转换；打包成 `.app` 时其编译产物被一并分发。
-- 修改：为在 macOS 上构建运行，本项目对其做了 5 处改动（`net472 → net8.0`、移除未使用的 Windows 专属依赖、修复 `-c` 不复制预览图、`info` 路径显示、`project.json` 容错）。改动以补丁形式提供于 `tools/repkg-macos.patch`，未改变其原有算法。
+- 修改：为在 macOS 上构建运行，本项目对其做了 6 处改动（`net472 → net8.0`、移除未使用的 Windows 专属依赖、修复 `-c` 不复制预览图、`info` 路径显示、`project.json` 容错、拒绝越界解包路径）。改动以补丁形式提供于 `tools/repkg-macos.patch`。
 
 ```
 MIT License
@@ -39,18 +39,19 @@ SOFTWARE.
 
 ## 2. RePKG 内部依赖的库
 
-这些库被编译进 RePKG 的产物，随引擎一起分发。完整许可证原文见上游仓库的
-[THIRD-PARTY-NOTICES.txt](https://github.com/notscuffed/repkg/blob/master/THIRD-PARTY-NOTICES.txt)。
+这些库被编译进 RePKG 的产物，随引擎一起分发。完整许可证原文会从上游
+`THIRD-PARTY-NOTICES.txt` 随 `.app` 一并分发，文件名为
+`REPKG-THIRD-PARTY-NOTICES.txt`。
 
 | 组件 | 作者 | 许可证 |
 |---|---|---|
 | CommandLineParser | Giacomo Stelluti Scala & Contributors | MIT |
 | Newtonsoft.Json | James Newton-King | MIT |
 | K4os.Compression.LZ4 | Milosz Krajewski | MIT |
-| SixLabors.ImageSharp 2.1.9 | Six Labors | Apache-2.0 |
+| SixLabors.ImageSharp 2.1.13 | Six Labors | Apache-2.0 |
 | DXT 解压代码（移植自 libsquish） | Xalcon @ mmowned.com-Forum | MIT |
 
-Apache-2.0 全文见 https://www.apache.org/licenses/LICENSE-2.0 。
+Apache-2.0 全文包含在上述上游第三方声明文件中。
 ImageSharp 的版权声明：`Copyright (c) Six Labors`。
 
 ## 3. 系统框架

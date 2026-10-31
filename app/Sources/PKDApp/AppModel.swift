@@ -514,7 +514,11 @@ final class AppModel: ObservableObject {
             pendingConfirm = ConfirmRequest(
                 items: targets,
                 estimateBytes: estimate,
-                availableBytes: DiskSpace.availableBytes(at: settings.outputRoot)
+                availableBytes: DiskSpace.availableBytes(
+                    at: settings.exportImagesOnly
+                        ? FileManager.default.temporaryDirectory
+                        : settings.outputRoot
+                )
             )
         } else {
             performExtraction(targets)

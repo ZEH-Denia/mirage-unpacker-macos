@@ -5,7 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"      # app/
 REPO="$(dirname "$ROOT")"                      # 仓库根
 APP="$ROOT/dist/PKD.app"
-VERSION="${PKD_VERSION:-1.0.0}"
+TAG_VERSION="$(git -C "$REPO" describe --tags --exact-match HEAD 2>/dev/null || true)"
+TAG_VERSION="${TAG_VERSION#v}"
+VERSION="${PKD_VERSION:-${TAG_VERSION:-$(tr -d '\n' < "$REPO/VERSION")}}"
 BUILD="${PKD_BUILD:-1}"
 
 echo "==> 编译 release"
@@ -15,6 +17,10 @@ swift build -c release --disable-sandbox --product PKD
 if [ ! -x "$REPO/tools/bin/repkg" ]; then
   echo "缺少解包引擎 $REPO/tools/bin/repkg" >&2
   echo "请先运行: ./tools/build-repkg.sh" >&2
+  exit 1
+fi
+if [ ! -f "$REPO/tools/bin/REPKG-THIRD-PARTY-NOTICES.txt" ]; then
+  echo "缺少 RePKG 第三方许可证声明，请重新运行 ./tools/build-repkg.sh" >&2
   exit 1
 fi
 
@@ -44,6 +50,12 @@ if [ ! -f "$ICNS" ]; then
   iconutil -c icns "$ICONSET" -o "$ICNS"
 fi
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
+
+echo "==> 打包许可证与第三方声明"
+cp "$REPO/LICENSE" "$APP/Contents/Resources/LICENSE.txt"
+cp "$REPO/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.md"
+cp "$REPO/tools/bin/REPKG-THIRD-PARTY-NOTICES.txt" \
+  "$APP/Contents/Resources/REPKG-THIRD-PARTY-NOTICES.txt"
 
 echo "==> 写入 Info.plist"
 cp "$ROOT/Resources/Info.plist.template" "$APP/Contents/Info.plist"

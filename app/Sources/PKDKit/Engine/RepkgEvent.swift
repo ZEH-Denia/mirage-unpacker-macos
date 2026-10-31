@@ -26,5 +26,7 @@ public enum RepkgEvent: Sendable, Equatable {
         case inputNotFound
         /// info 的措辞：`Input file/directory doesn't exist!`
         case inputPathDoesNotExist
+        /// 包内条目路径逃出输出目录时的安全拒绝。
+        case unsafePackageEntryPath
     }
 }

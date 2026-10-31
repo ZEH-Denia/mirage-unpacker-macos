@@ -5,6 +5,8 @@ public struct ImageExportResult: Sendable, Equatable {
     public var directory: URL
     /// 实际写入的文件名（按「正常层 → X-Ray 层」顺序）
     public var files: [String] = []
+    /// 未能复制的图片及原因。
+    public var failures: [String] = []
 
     public var isEmpty: Bool { files.isEmpty }
 
@@ -39,25 +41,55 @@ public enum ImageExporter {
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
+            result.failures.append("无法创建导出目录：\(error.localizedDescription)")
             return result
         }
 
         let sources = collectSources(in: workDirectory, xray: xray, fileManager: fileManager)
         guard !sources.isEmpty else { return result }
 
+        var reservedNames: Set<String> = []
         for source in sources {
             let ext = source.url.pathExtension.lowercased()
-            let target = directory.appendingPathComponent("\(source.role).\(ext)")
+            let baseName = "\(source.role).\(ext)"
+            var fileName = baseName
+            var duplicate = 2
+            while reservedNames.contains(fileName) {
+                fileName = "\(source.role) (\(duplicate)).\(ext)"
+                duplicate += 1
+            }
+            reservedNames.insert(fileName)
+            let target = directory.appendingPathComponent(fileName)
+            let staging = directory.appendingPathComponent(".pkd-export-\(UUID().uuidString)")
 
-            // 同一壁纸重复导出：覆盖同名文件，避免堆积 (2)(3)
+            do {
+                try fileManager.copyItem(at: source.url, to: staging)
+            } catch {
+                result.failures.append("\(source.url.lastPathComponent)：\(error.localizedDescription)")
+                continue
+            }
+
+            var backup: URL?
             if fileManager.fileExists(atPath: target.path) {
-                try? fileManager.removeItem(at: target)
+                let backupURL = directory.appendingPathComponent(".pkd-backup-\(UUID().uuidString)")
+                do {
+                    try fileManager.moveItem(at: target, to: backupURL)
+                    backup = backupURL
+                } catch {
+                    try? fileManager.removeItem(at: staging)
+                    result.failures.append("无法替换 \(target.lastPathComponent)：\(error.localizedDescription)")
+                    continue
+                }
             }
 
             do {
-                try fileManager.copyItem(at: source.url, to: target)
+                try fileManager.moveItem(at: staging, to: target)
+                if let backup { try? fileManager.removeItem(at: backup) }
                 result.files.append(target.lastPathComponent)
             } catch {
+                if let backup { try? fileManager.moveItem(at: backup, to: target) }
+                try? fileManager.removeItem(at: staging)
+                result.failures.append("无法写入 \(target.lastPathComponent)：\(error.localizedDescription)")
                 continue
             }
         }

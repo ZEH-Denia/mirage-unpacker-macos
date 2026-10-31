@@ -61,6 +61,13 @@ public final class JobQueue: ObservableObject {
 
     public func cancel(_ jobID: UUID) {
         guard let job = jobs.first(where: { $0.id == jobID }), !job.state.isTerminal else { return }
+        if job.state == .queued {
+            job.state = .cancelled
+            job.endedAt = Date()
+            if let temp = job.temporaryOutput { try? FileManager.default.removeItem(at: temp) }
+            pump()
+            return
+        }
         job.state = .cancelling
         let session = job.session
         Task {
@@ -123,6 +130,12 @@ public final class JobQueue: ObservableObject {
     }
 
     private func execute(_ job: ExtractJob) async {
+        defer {
+            if let temp = job.temporaryOutput {
+                try? FileManager.default.removeItem(at: temp)
+            }
+        }
+
         guard let engineURL else {
             job.state = .failed("未找到 repkg 引擎")
             job.endedAt = Date()
@@ -172,6 +185,15 @@ public final class JobQueue: ObservableObject {
             }
         }
 
+        guard job.state != .cancelling else {
+            job.state = .cancelled
+            job.endedAt = Date()
+            logSink.append(jobID: jobID, text: "读取包信息阶段已取消", kind: .marker)
+            logSink.close(jobID: jobID)
+            onFinished?(job)
+            return
+        }
+
         job.state = .running
 
         var attempt = 0
@@ -187,8 +209,10 @@ public final class JobQueue: ObservableObject {
                 }
             )
 
+            let cancellationRequested = job.state == .cancelling
+
             // 崩溃类失败自动重试一次
-            if attempt == 0, case .failed(let failure) = report.verdict,
+            if !cancellationRequested, attempt == 0, case .failed(let failure) = report.verdict,
                failure == .crashed || failure == .missingDoneSentinel {
                 attempt += 1
                 logSink.append(jobID: jobID, text: "首次失败（\(failure.message)），自动重试一次…", kind: .warning)
@@ -227,14 +251,22 @@ public final class JobQueue: ObservableObject {
                     job.exportedImages = result
 
                     if result.isEmpty {
-                        job.warnings.append("未找到可导出的图片")
-                        logSink.append(jobID: jobID, text: "警告：未找到可导出的图片", kind: .warning)
+                        let warning = result.failures.isEmpty
+                            ? "未找到可导出的图片"
+                            : "图片导出失败：\(result.failures.joined(separator: "；"))"
+                        job.warnings.append(warning)
+                        logSink.append(jobID: jobID, text: "警告：\(warning)", kind: .warning)
                     } else {
                         logSink.append(
                             jobID: jobID,
                             text: "已导出 \(result.files.count) 张图片 → \(folderName)/：\(result.summary)",
                             kind: .marker
                         )
+                        if !result.failures.isEmpty {
+                            let warning = "部分图片导出失败：\(result.failures.joined(separator: "；"))"
+                            job.warnings.append(warning)
+                            logSink.append(jobID: jobID, text: "警告：\(warning)", kind: .warning)
+                        }
                     }
                 }
 
@@ -245,9 +277,20 @@ public final class JobQueue: ObservableObject {
 
             switch report.verdict {
             case .success:
-                job.state = .succeeded
+                if job.imageExportDestination != nil && (job.exportedImages?.isEmpty ?? true) {
+                    job.state = .partial(warningCount: max(1, job.warnings.count))
+                } else if job.imageExportDestination != nil,
+                          let exported = job.exportedImages,
+                          !exported.failures.isEmpty {
+                    job.state = .partial(warningCount: max(1, job.warnings.count))
+                } else {
+                    job.state = .succeeded
+                }
             case .partialSuccess:
-                job.state = .partial(warningCount: report.warnings.count + report.missingEntries.count)
+                job.state = .partial(warningCount: max(
+                    report.warnings.count + report.missingEntries.count,
+                    job.warnings.count
+                ))
             case .cancelled:
                 job.state = .cancelled
             case .failed(let failure):
@@ -276,7 +319,11 @@ public final class JobQueue: ObservableObject {
         case .textureWarning(let kind): return "警告：纹理\(kind == .read ? "读取" : "写入")失败"
         case .unrecognizedExtension(let ext): return "警告：无法识别的扩展名 \(ext)"
         case .fatal(let signal):
-            return signal == .inputNotFound ? "错误：输入文件不存在" : "错误：输入路径不存在"
+            switch signal {
+            case .inputNotFound: return "错误：输入文件不存在"
+            case .inputPathDoesNotExist: return "错误：输入路径不存在"
+            case .unsafePackageEntryPath: return "安全拒绝：包内路径越界，未继续解包"
+            }
         case .terminating: return "收到中断信号，正在停止…"
         case .done: return "完成标记"
         case .continuation(let text): return "  \(text)"

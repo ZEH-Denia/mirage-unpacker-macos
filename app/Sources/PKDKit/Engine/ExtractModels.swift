@@ -101,6 +101,7 @@ public struct ExtractReport: Sendable {
         case missingDoneSentinel
         case emptyOutput
         case unrecognizedInput
+        case unsafePackageEntryPath
 
         public var message: String {
             switch self {
@@ -110,6 +111,7 @@ public struct ExtractReport: Sendable {
             case .missingDoneSentinel: return "解包未正常结束（未收到完成标记）"
             case .emptyOutput: return "未产出任何文件"
             case .unrecognizedInput: return "无法识别的输入文件类型"
+            case .unsafePackageEntryPath: return "包内路径越界，已阻止写入"
             }
         }
     }
@@ -183,6 +185,9 @@ public enum ExtractVerdict {
 
         // 4. 输入不存在
         if facts.fatal != nil {
+            if facts.fatal == .unsafePackageEntryPath {
+                return .failed(.unsafePackageEntryPath)
+            }
             return .failed(.inputNotFound)
         }
 

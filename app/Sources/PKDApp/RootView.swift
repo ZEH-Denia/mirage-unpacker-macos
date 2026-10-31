@@ -253,6 +253,9 @@ struct RootView: View {
             if let available = request.availableBytes {
                 text += "\n临时空间需求约 \(estimate)，当前剩余 "
                     + ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
+                if available < request.estimateBytes {
+                    text += "\n\n⚠️ 临时目录所在磁盘剩余空间可能不足。"
+                }
             }
             return text
         }

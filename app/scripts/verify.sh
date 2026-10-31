@@ -55,7 +55,9 @@ else
 fi
 
 echo "==> 5/5 失败路径（不存在的输入）"
-GHOST=$(mktemp -d)/nope.pkg
+GHOST_DIR=$(mktemp -d)
+trap 'rm -rf "$GHOST_DIR"' EXIT
+GHOST="$GHOST_DIR/nope.pkg"
 OUT=$("$REPKG" extract "$GHOST" -o "$(dirname "$GHOST")/out" 2>&1)
 if echo "$OUT" | grep -q "Input file not found" && ! echo "$OUT" | grep -q "^Done$"; then
   pass "正确识别为失败（退出码恒 0 也不误判）"
