@@ -510,6 +510,26 @@ do {
 
 // MARK: - 集成：真实 repkg
 
+section("PackageInfoCache 命中与失效")
+do {
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pkd-info-cache-\(UUID().uuidString)", isDirectory: true)
+    let package = base.appendingPathComponent("scene.pkg")
+    let cache = PackageInfoCache(directory: base.appendingPathComponent("cache", isDirectory: true))
+    try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    try? Data([1, 2, 3]).write(to: package)
+
+    let info = PkgInfo(packagePath: package.path, entries: [PkgEntryInfo(path: "scene.json", size: 3)])
+    await cache.store(info, for: package)
+    let cached = await cache.load(for: package)
+    checkEqual(cached, info, "同一包文件应命中磁盘缓存")
+
+    try? Data([1, 2, 3, 4]).write(to: package)
+    let stale = await cache.load(for: package)
+    check(stale == nil, "包文件变化后应忽略旧缓存")
+    try? FileManager.default.removeItem(at: base)
+}
+
 section("集成测试：真实 repkg")
 do {
     switch RepkgLocator.locate() {

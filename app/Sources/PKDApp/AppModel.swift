@@ -46,13 +46,20 @@ final class AppModel: ObservableObject {
 
     // MARK: - 状态
 
-    @Published var items: [WallpaperItem] = []
+    @Published var items: [WallpaperItem] = [] {
+        didSet { filteredItemsCache = nil }
+    }
     @Published var selection: Set<String> = []
-    @Published var searchText: String = ""
+    @Published var searchText: String = "" {
+        didSet {
+            if oldValue != searchText { filteredItemsCache = nil }
+        }
+    }
     /// 当前导航位置。筛选档位本身就是导航的一档，不再与页签分离。
     @Published var nav: NavItem = .library(.all) {
         didSet {
             guard nav != oldValue else { return }
+            filteredItemsCache = nil
             // 离开素材库时清掉多选：否则工具栏的「解包所选」会在队列页仍然亮着
             if !nav.isLibrary { selection = [] }
         }
@@ -89,6 +96,9 @@ final class AppModel: ObservableObject {
     let queue: JobQueue
     /// 日志检查器的控制器放在这里，菜单栏「清空日志」才能拿到它
     let logController = LogController()
+
+    private var filteredItemsCache: [WallpaperItem]?
+    private let packageInfoCache = PackageInfoCache()
 
     // MARK: - 窗口布局
 
@@ -131,8 +141,14 @@ final class AppModel: ObservableObject {
         AppModel.current = self
 
         // 把嵌套对象的变更转发给本对象，视图只需观察 AppModel
+        history.objectWillChange
+            .sink { [weak self] _ in
+                self?.filteredItemsCache = nil
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
         for publisher in [settings.objectWillChange.eraseToAnyPublisher(),
-                          history.objectWillChange.eraseToAnyPublisher(),
                           queue.objectWillChange.eraseToAnyPublisher(),
                           logController.objectWillChange.eraseToAnyPublisher()] {
             publisher
@@ -271,7 +287,9 @@ final class AppModel: ObservableObject {
     }
 
     var filteredItems: [WallpaperItem] {
-        items.filter { item in
+        if let cached = filteredItemsCache { return cached }
+
+        let result = items.filter { item in
             if !searchText.isEmpty {
                 let matches = item.title.localizedCaseInsensitiveContains(searchText)
                     || item.id.contains(searchText)
@@ -284,6 +302,8 @@ final class AppModel: ObservableObject {
             case .extracted: return history.entry(for: item.id) != nil
             }
         }
+        filteredItemsCache = result
+        return result
     }
 
     var selectedItems: [WallpaperItem] {
@@ -431,9 +451,11 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.items = scanned
             self.isScanning = false
-            self.selection = self.selection.filter { id in scanned.contains { $0.id == id } }
+            let scannedIDs = Set(scanned.map(\.id))
+            let scannedPackagePaths = Set(scanned.compactMap { $0.pkgURL?.path })
+            self.selection = self.selection.filter { scannedIDs.contains($0) }
             self.infoCache = self.infoCache.filter { key, _ in
-                scanned.contains { $0.pkgURL?.path == key }
+                scannedPackagePaths.contains(key)
             }
             // 清理指向已删除目录的「已解包」标记
             for item in scanned where self.history.entry(for: item.id) != nil {
@@ -463,8 +485,20 @@ final class AppModel: ObservableObject {
                     continue
                 }
 
+                let cached = await self?.packageInfoCache.load(for: pkg)
+                guard !Task.isCancelled else { return }
+                if let cached {
+                    self?.xrayFlags[item.id] = cached.entries.contains {
+                        $0.path.lowercased().contains("xray")
+                    }
+                    continue
+                }
+                guard self?.loadingInfo.contains(key) != true else { continue }
+                self?.loadingInfo.insert(key)
+
                 let session = RepkgSession(executable: engineURL)
                 let result = await session.info(for: pkg)
+                self?.loadingInfo.remove(key)
                 guard !Task.isCancelled else { return }
 
                 if case .success(let info) = result {
@@ -491,6 +525,9 @@ final class AppModel: ObservableObject {
             self.loadingInfo.remove(key)
             if case .success(let info) = result {
                 self.infoCache[key] = info
+                self.xrayFlags[item.id] = info.entries.contains {
+                    $0.path.lowercased().contains("xray")
+                }
             }
         }
     }

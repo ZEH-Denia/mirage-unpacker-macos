@@ -25,10 +25,10 @@ fi
 if [ ! -f "$PATCH_FILE" ]; then
   echo "!! 缺少 macOS 补丁：$PATCH_FILE" >&2
   exit 1
-elif git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
+elif git -C "$SRC_DIR" apply --ignore-space-change --check "$PATCH_FILE" 2>/dev/null; then
   echo "==> 应用 macOS 补丁"
-  git -C "$SRC_DIR" apply "$PATCH_FILE"
-elif git -C "$SRC_DIR" apply --check --reverse "$PATCH_FILE" 2>/dev/null; then
+  git -C "$SRC_DIR" apply --ignore-space-change "$PATCH_FILE"
+elif git -C "$SRC_DIR" apply --ignore-space-change --check --reverse "$PATCH_FILE" 2>/dev/null; then
   echo "==> 补丁已应用过，跳过"
 else
   echo "!! 补丁无法应用（上游可能已更新）。检查 $PATCH_FILE 后再构建。" >&2
@@ -70,7 +70,7 @@ echo "==> RID:    $RID"
   -r "$RID" \
   --self-contained true \
   -p:PublishSingleFile=true \
-  -p:PublishTrimmed=false \
+  -p:PublishTrimmed=true \
   -p:EnableCompressionInSingleFile=true \
   -o "$OUT_DIR"
 

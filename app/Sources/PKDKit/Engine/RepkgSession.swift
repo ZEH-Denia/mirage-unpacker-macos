@@ -90,6 +90,8 @@ final class ExtractLinePump: @unchecked Sendable {
 
 /// 一次解包会话。每个任务持有独立实例，取消互不干扰。
 public final class RepkgSession: @unchecked Sendable {
+    private static let packageInfoCache = PackageInfoCache()
+
     public let executable: URL
     private let runner: ProcessRunning
 
@@ -113,6 +115,10 @@ public final class RepkgSession: @unchecked Sendable {
     }
 
     public func info(for pkg: URL) async -> Result<PkgInfo, InfoFailure> {
+        if let cached = await Self.packageInfoCache.load(for: pkg) {
+            return .success(cached)
+        }
+
         let request = ProcessRequest(executable: executable, arguments: ["info", pkg.path, "-e"])
 
         let output: ProcessOutput
@@ -128,6 +134,7 @@ public final class RepkgSession: @unchecked Sendable {
         }
 
         if let info = parser.result() {
+            await Self.packageInfoCache.store(info, for: pkg)
             return .success(info)
         }
         if parser.fatal != nil || output.stdoutLines.contains("Input file not found") {

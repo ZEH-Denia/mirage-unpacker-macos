@@ -41,7 +41,7 @@ Mirage 订阅下载
 
 [![Release](https://img.shields.io/github/v/release/ZEH-Denia/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest)
 
-不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon，约 29 MB）。
+不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon，约 10 MB）。
 
 资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.zip`（GitHub 会把文件名里的空格转成点号，所以用连字符）。
 
@@ -314,7 +314,7 @@ app/
   scripts/verify.sh              回归验证
 tools/
   build-repkg.sh                 编译引擎（clone 上游 + 应用补丁）
-  repkg-macos.patch              相对上游的 5 处改动
+  repkg-macos.patch              RePKG macOS 移植与发布补丁
   testdata/                      合成测试包生成器与像素校验脚本
 ```
 
@@ -324,7 +324,7 @@ tools/
 cd app && ./scripts/verify.sh
 ```
 
-覆盖：85 项单元断言（切行 / 解析 / 判定表 / X-Ray / 图片导出 / 存储清理）、队列全链路、真实包逐文件比对、失败路径判定。
+覆盖：87 项单元断言（切行 / 解析 / 判定表 / X-Ray / 图片导出 / 存储清理 / 包信息缓存）、队列全链路、真实包逐文件比对、失败路径判定。
 
 ## 许可
 

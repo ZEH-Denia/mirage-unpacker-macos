@@ -113,11 +113,19 @@ struct WallpaperCard: View {
 
     private func loadThumbnail() async {
         guard appearance.showThumbnails, let url = item.previewURL else { return }
-        let image = await Task.detached(priority: .utility) { () -> NSImage? in
+        let decodeTask = Task.detached(priority: .utility) { () -> NSImage? in
+            guard !Task.isCancelled else { return nil }
             // ThumbnailLoader 自带 NSCache（64MB / 256 条），滚动回来不会重复解码
             guard let cg = ThumbnailLoader.thumbnail(for: url, maxPixel: 480) else { return nil }
+            guard !Task.isCancelled else { return nil }
             return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        }.value
+        }
+        let image = await withTaskCancellationHandler {
+            await decodeTask.value
+        } onCancel: {
+            decodeTask.cancel()
+        }
+        guard !Task.isCancelled else { return }
         if let image { thumbnail.image = image }
     }
 

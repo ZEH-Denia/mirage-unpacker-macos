@@ -1,7 +1,15 @@
 diff --git a/RePKG.Application/RePKG.Application.csproj b/RePKG.Application/RePKG.Application.csproj
-index 64b2f6b..c9152a1 100644
+index 64b2f6b..e26db54 100644
 --- a/RePKG.Application/RePKG.Application.csproj
 +++ b/RePKG.Application/RePKG.Application.csproj
+@@ -1,6 +1,6 @@
+ ﻿<Project Sdk="Microsoft.NET.Sdk">
+     <PropertyGroup>
+-        <TargetFramework>netstandard2.0</TargetFramework>
++        <TargetFramework>net8.0</TargetFramework>
+         <Version>0.4.0</Version>
+         <Copyright>Copyright © NotScuffed 2025</Copyright>
+     </PropertyGroup>
 @@ -12,7 +12,17 @@
      <ItemGroup>
          <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
@@ -22,6 +30,18 @@ index 64b2f6b..c9152a1 100644
 +        <!-- 移除 System.Drawing.Common 9.0.0：代码中并未使用，且该包在 macOS/Linux 上会抛 PlatformNotSupportedException -->
      </ItemGroup>
  </Project>
+diff --git a/RePKG.Core/RePKG.Core.csproj b/RePKG.Core/RePKG.Core.csproj
+index 17562c0..65c76f7 100644
+--- a/RePKG.Core/RePKG.Core.csproj
++++ b/RePKG.Core/RePKG.Core.csproj
+@@ -1,6 +1,6 @@
+ ﻿<Project Sdk="Microsoft.NET.Sdk">
+     <PropertyGroup>
+-        <TargetFramework>netstandard2.0</TargetFramework>
++        <TargetFramework>net8.0</TargetFramework>
+         <Version>0.4.0</Version>
+         <Copyright>Copyright © NotScuffed 2025</Copyright>
+     </PropertyGroup>
 diff --git a/RePKG.Tests/RePKG.Tests.csproj b/RePKG.Tests/RePKG.Tests.csproj
 index b5df6b5..7848d0a 100644
 --- a/RePKG.Tests/RePKG.Tests.csproj
@@ -35,10 +55,18 @@ index b5df6b5..7848d0a 100644
          <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
      </PropertyGroup>
 diff --git a/RePKG/Command/Extract.cs b/RePKG/Command/Extract.cs
-index 8e4efce..5b41b4a 100644
+index 8e4efce..8fccb4f 100644
 --- a/RePKG/Command/Extract.cs
 +++ b/RePKG/Command/Extract.cs
-@@ -54,25 +54,36 @@ namespace RePKG.Command
+@@ -6,6 +6,7 @@ using System.Linq;
+ using System.Text;
+ using CommandLine;
+ using Newtonsoft.Json;
++using Newtonsoft.Json.Linq;
+ using RePKG.Application.Package;
+ using RePKG.Application.Texture;
+ using RePKG.Core.Package;
+@@ -54,25 +55,36 @@ namespace RePKG.Command
              var fileInfo = new FileInfo(options.Input);
              var directoryInfo = new DirectoryInfo(options.Input);
  
@@ -87,7 +115,7 @@ index 8e4efce..5b41b4a 100644
              Console.WriteLine("Done");
          }
  
-@@ -199,8 +210,17 @@ namespace RePKG.Command
+@@ -199,8 +211,17 @@ namespace RePKG.Command
              if (appendFolderName)
                  GetProjectFolderNameAndPreviewImage(file, defaultProjectName, out outputDirectory, out preview);
              else
@@ -105,7 +133,7 @@ index 8e4efce..5b41b4a 100644
              // Extract package entries
              var entries = FilterEntries(package.Entries);
              foreach (var entry in entries)
-@@ -267,6 +287,13 @@ namespace RePKG.Command
+@@ -267,6 +288,13 @@ namespace RePKG.Command
  
              var filePath = filePathWithoutExtension + entry.Extension;
  
@@ -119,7 +147,7 @@ index 8e4efce..5b41b4a 100644
              Directory.CreateDirectory(Path.GetDirectoryName(filePathWithoutExtension));
  
              if (!_options.Overwrite && File.Exists(filePath))
-@@ -300,6 +327,35 @@ namespace RePKG.Command
+@@ -300,6 +328,35 @@ namespace RePKG.Command
              }
          }
  
@@ -155,7 +183,7 @@ index 8e4efce..5b41b4a 100644
          private static void GetProjectInfo(FileInfo packageFile, ref string title, ref string preview)
          {
              var directory = packageFile.Directory;
-@@ -310,9 +366,17 @@ namespace RePKG.Command
+@@ -310,9 +367,17 @@ namespace RePKG.Command
              if (projectJson.Length == 0 || !projectJson[0].Exists)
                  return;
  
@@ -165,9 +193,9 @@ index 8e4efce..5b41b4a 100644
 +            // project.json 可能格式异常，读取失败不应中断整个解包流程
 +            try
 +            {
-+                dynamic json = JsonConvert.DeserializeObject(File.ReadAllText(projectJson[0].FullName));
-+                title = json.title;
-+                preview = json.preview;
++                var json = JObject.Parse(File.ReadAllText(projectJson[0].FullName));
++                title = json.Value<string>("title");
++                preview = json.Value<string>("preview");
 +            }
 +            catch (Exception e)
 +            {
@@ -176,7 +204,7 @@ index 8e4efce..5b41b4a 100644
          }
  
          private static void GetProjectFolderNameAndPreviewImage(FileInfo packageFile, string defaultProjectName,
-@@ -335,6 +399,14 @@ namespace RePKG.Command
+@@ -335,6 +400,14 @@ namespace RePKG.Command
              }
  
              outputDirectory = Path.Combine(_options.OutputDirectory, defaultProjectName);
@@ -191,7 +219,7 @@ index 8e4efce..5b41b4a 100644
          }
  
          private static ITex LoadTex(byte[] bytes, string name)
-@@ -413,4 +485,4 @@ namespace RePKG.Command
+@@ -413,4 +486,4 @@ namespace RePKG.Command
          [Value(0, Required = true, HelpText = "Path to file/directory", MetaName = "Input")]
          public string Input { get; set; }
      }
@@ -199,9 +227,18 @@ index 8e4efce..5b41b4a 100644
 \ No newline at end of file
 +}
 diff --git a/RePKG/Command/Info.cs b/RePKG/Command/Info.cs
-index 2a105a2..144e4e2 100644
+index 2a105a2..f105d4f 100644
 --- a/RePKG/Command/Info.cs
 +++ b/RePKG/Command/Info.cs
+@@ -3,7 +3,7 @@ using System.Collections.Generic;
+ using System.IO;
+ using System.Linq;
+ using CommandLine;
+-using Newtonsoft.Json;
++using Newtonsoft.Json.Linq;
+ using RePKG.Application.Package;
+ using RePKG.Core.Package;
+ using RePKG.Core.Package.Interfaces;
 @@ -76,7 +76,8 @@ namespace RePKG.Command
          private static void InfoFile(FileInfo file)
          {
@@ -212,8 +249,89 @@ index 2a105a2..144e4e2 100644
              else if (file.Extension.Equals(".tex", StringComparison.OrdinalIgnoreCase))
                  InfoTex(file);
              else
+@@ -97,10 +98,10 @@ namespace RePKG.Command
+                 IEnumerable<string> projectInfoEnumerator;
+ 
+                 if (_projectInfoToPrint.Length == 1 && _projectInfoToPrint[0] == "*")
+-                    projectInfoEnumerator = Helper.GetPropertyKeysForDynamic(projectInfo);
++                    projectInfoEnumerator = Helper.GetPropertyKeys(projectInfo);
+                 else
+                 {
+-                    projectInfoEnumerator = Helper.GetPropertyKeysForDynamic(projectInfo);
++                    projectInfoEnumerator = Helper.GetPropertyKeys(projectInfo);
+                     projectInfoEnumerator = projectInfoEnumerator.Where(x =>
+                         _projectInfoToPrint.Contains(x, StringComparer.OrdinalIgnoreCase));
+                 }
+@@ -149,7 +150,7 @@ namespace RePKG.Command
+         {
+         }
+ 
+-        private static dynamic GetProjectInfo(FileInfo packageFile)
++        private static JObject GetProjectInfo(FileInfo packageFile)
+         {
+             var directory = packageFile.Directory;
+             if (directory == null)
+@@ -159,17 +160,17 @@ namespace RePKG.Command
+             if (projectJson.Length == 0 || !projectJson[0].Exists)
+                 return null;
+ 
+-            return JsonConvert.DeserializeObject(File.ReadAllText(projectJson[0].FullName));
++            return JObject.Parse(File.ReadAllText(projectJson[0].FullName));
+         }
+ 
+-        private static bool MatchesFilter(dynamic project)
++        private static bool MatchesFilter(JObject project)
+         {
+             if (project == null)
+                 return true;
+ 
+             if (!string.IsNullOrEmpty(_options.TitleFilter))
+             {
+-                var title = (string) project.title;
++                var title = project.Value<string>("title");
+                 if (!title.Contains(_options.TitleFilter, StringComparison.OrdinalIgnoreCase))
+                     return false;
+             }
+@@ -202,4 +203,4 @@ namespace RePKG.Command
+         [Option("title-filter", HelpText = "Title filter")]
+         public string TitleFilter { get; set; }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/RePKG/Helper.cs b/RePKG/Helper.cs
+index 316beaf..fb131e3 100644
+--- a/RePKG/Helper.cs
++++ b/RePKG/Helper.cs
+@@ -1,21 +1,14 @@
+ ﻿using System.Collections.Generic;
++using System.Linq;
+ using Newtonsoft.Json.Linq;
+ 
+ namespace RePKG
+ {
+     public static class Helper
+     {
+-        public static IEnumerable<string> GetPropertyKeysForDynamic(dynamic dynamicToGetPropertiesFor)
++        public static IEnumerable<string> GetPropertyKeys(JObject project)
+         {
+-            JObject attributesAsJObject = dynamicToGetPropertiesFor;
+-            var values = attributesAsJObject.ToObject<Dictionary<string, object>>();
+-            var toReturn = new List<string>();
+-            foreach (var key in values.Keys)
+-            {
+-                toReturn.Add(key);
+-            }
+-
+-            return toReturn;
++            return project.Properties().Select(property => property.Name);
+         }
+     }
+-}
+\ No newline at end of file
++}
 diff --git a/RePKG/RePKG.csproj b/RePKG/RePKG.csproj
-index 892f7ac..08fb8bc 100644
+index 892f7ac..138fb02 100644
 --- a/RePKG/RePKG.csproj
 +++ b/RePKG/RePKG.csproj
 @@ -2,9 +2,15 @@
@@ -233,7 +351,7 @@ index 892f7ac..08fb8bc 100644
      </PropertyGroup>
      
      <ItemGroup>
-@@ -14,13 +20,27 @@
+@@ -14,13 +20,28 @@
      
      <ItemGroup>
          <PackageReference Include="CommandLineParser" Version="2.9.1" />
@@ -261,7 +379,21 @@ index 892f7ac..08fb8bc 100644
  
      <ItemGroup>
          <None Include="$(ProjectDir)/../THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
++        <TrimmerRootDescriptor Include="linker.xml" />
      </ItemGroup>
 -</Project>
 \ No newline at end of file
 +</Project>
+diff --git a/RePKG/linker.xml b/RePKG/linker.xml
+new file mode 100644
+index 0000000..e50bbdc
+--- /dev/null
++++ b/RePKG/linker.xml
+@@ -0,0 +1,7 @@
++<linker>
++  <assembly fullname="repkg">
++    <type fullname="RePKG.Command.ExtractOptions" preserve="all" />
++    <type fullname="RePKG.Command.InfoOptions" preserve="all" />
++  </assembly>
++  <assembly fullname="CommandLine" preserve="all" />
++</linker>
