@@ -284,13 +284,13 @@ struct RootView: View {
 
 private struct ContentColumn: View {
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var appearance: AppearanceSettings
-    @EnvironmentObject private var accessibility: AccessibilitySettings
 
     var body: some View {
         VStack(spacing: 0) {
             notice
 
+            // 不做 .id() + transition：切页时整棵子树重建会明显卡顿，
+            // 直接交换内容更快，也避免与列表/滚动状态互相干扰。
             Group {
                 switch model.selectedTab {
                 case .detail:
@@ -302,14 +302,7 @@ private struct ContentColumn: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .id(model.selectedTab)
-            .transition(.opacity)
         }
-        .animation(tabAnimation, value: model.selectedTab)
-    }
-
-    private var tabAnimation: Animation? {
-        appearance.reducesMotion(system: accessibility.reduceMotion) ? nil : .easeInOut(duration: 0.18)
     }
 
     @ViewBuilder

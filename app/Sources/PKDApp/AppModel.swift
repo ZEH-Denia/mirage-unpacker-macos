@@ -78,8 +78,8 @@ final class AppModel: ObservableObject {
     }
     @Published var searchText: String = ""
     @Published var filter: LibraryFilter = .all
-    /// 侧栏筛选条是否展开（默认收起，只留一个折叠按钮）
-    @Published var isFilterExpanded: Bool = false
+    /// 侧栏筛选弹出面板是否展开
+    @Published var isFilterMenuPresented: Bool = false
     @Published var infoCache: [String: PkgInfo] = [:]
     @Published var loadingInfo: Set<String> = []
     @Published var engineStatus: EngineStatus = .unknown
@@ -171,8 +171,26 @@ final class AppModel: ObservableObject {
         if debugDefaults.string(forKey: "pkd.debug.tab") == "queue" {
             selectedTab = .queue
         }
-        if debugDefaults.bool(forKey: "pkd.debug.filterExpanded") {
-            isFilterExpanded = true
+        // 冒烟钩子：pkd.debug.filterMenu=1 时延时展开筛选面板，用于截图
+        if debugDefaults.bool(forKey: "pkd.debug.filterMenu") {
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                self?.isFilterMenuPresented = true
+            }
+        }
+
+        // 冒烟钩子：pkd.debug.stress=1 时每 0.8s 轮换页签，用于验证切换是否卡顿
+        if debugDefaults.bool(forKey: "pkd.debug.stress") {
+            Task { [weak self] in
+                var index = 0
+                let tabs: [Tab] = [.detail, .queue, .storage]
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    guard let self else { return }
+                    self.selectedTab = tabs[index % tabs.count]
+                    index += 1
+                }
+            }
         }
 
         // 冒烟钩子：PKD_SMOKE_INSPECTOR=1 展开日志检查器；PKD_SMOKE_SELECT=1 选中首项

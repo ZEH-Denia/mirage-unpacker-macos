@@ -88,7 +88,7 @@ final class LogController: ObservableObject {
             if backlog.count > 6000 {
                 backlog.removeFirst(backlog.count - 6000)
             }
-            hasContent = true
+            if !hasContent { hasContent = true }
             return
         }
         write(lines)
@@ -113,7 +113,7 @@ final class LogController: ObservableObject {
         storage.append(chunk)
         trimIfNeeded()
         textView.scrollToEndOfDocument(nil)
-        hasContent = true
+        if !hasContent { hasContent = true }
     }
 
     private func attributes(for kind: LogSink.Kind) -> [NSAttributedString.Key: Any] {
