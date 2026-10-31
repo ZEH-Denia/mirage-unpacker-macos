@@ -39,9 +39,9 @@ Mirage 订阅下载
 
 ## 下载
 
-[![Release](https://img.shields.io/github/v/release/5w57ywswf7-cloud/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos/releases/latest)
+[![Release](https://img.shields.io/github/v/release/ZEH-Denia/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest)
 
-不想自己编译的话，直接从 [Releases](https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon，约 29 MB）。
+不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon，约 29 MB）。
 
 资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.zip`（GitHub 会把文件名里的空格转成点号，所以用连字符）。
 
@@ -78,7 +78,7 @@ Mirage 订阅下载
 ## 构建
 
 ```bash
-git clone https://github.com/5w57ywswf7-cloud/mirage-unpacker-macos.git
+git clone https://github.com/ZEH-Denia/mirage-unpacker-macos.git
 cd mirage-unpacker-macos
 
 # 1. 编译解包引擎（首次会自动 clone 上游并应用 macOS 补丁）
