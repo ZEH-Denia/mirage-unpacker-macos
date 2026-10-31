@@ -78,6 +78,8 @@ final class AppModel: ObservableObject {
     }
     @Published var searchText: String = ""
     @Published var filter: LibraryFilter = .all
+    /// 侧栏筛选条是否展开（默认收起，只留一个折叠按钮）
+    @Published var isFilterExpanded: Bool = false
     @Published var infoCache: [String: PkgInfo] = [:]
     @Published var loadingInfo: Set<String> = []
     @Published var engineStatus: EngineStatus = .unknown
@@ -168,6 +170,9 @@ final class AppModel: ObservableObject {
         }
         if debugDefaults.string(forKey: "pkd.debug.tab") == "queue" {
             selectedTab = .queue
+        }
+        if debugDefaults.bool(forKey: "pkd.debug.filterExpanded") {
+            isFilterExpanded = true
         }
 
         // 冒烟钩子：PKD_SMOKE_INSPECTOR=1 展开日志检查器；PKD_SMOKE_SELECT=1 选中首项

@@ -4,9 +4,25 @@ import PKDKit
 struct WallpaperListView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
+    @EnvironmentObject private var accessibility: AccessibilitySettings
 
     var body: some View {
+        // 筛选放进 List 内部：侧栏内容会被搜索框/工具栏覆盖，
+        // 放在 List 外（VStack 或 safeAreaInset）都会被压到搜索框下面看不见。
         List(selection: $model.selection) {
+            filterDisclosure
+                .selectionDisabled(true)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 4))
+
+            if model.isFilterExpanded {
+                filterOptions
+                    .selectionDisabled(true)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 4, trailing: 6))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             Section {
                 ForEach(model.filteredItems) { item in
                     WallpaperRow(item: item)
@@ -46,7 +62,6 @@ struct WallpaperListView: View {
         .listStyle(.sidebar)
         .scrollIndicators(.hidden)
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "搜索标题或 ID")
-        .safeAreaInset(edge: .top, spacing: 0) { filterBar }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .overlay {
             if model.filteredItems.isEmpty {
@@ -75,8 +90,49 @@ struct WallpaperListView: View {
         return "检查素材库路径是否正确。"
     }
 
-    /// 筛选与素材放在一起：常驻在列表上方（不用 Section header，避免随内容滚走）
-    private var filterBar: some View {
+    /// 筛选：默认收起成一个按钮，点开才显示四段选项，省出侧栏纵向空间
+    private var filterDisclosure: some View {
+        Button {
+            withAnimation(expandAnimation) {
+                model.isFilterExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("筛选")
+                    .font(.caption.weight(.medium))
+
+                if model.filter != .all {
+                    Text(model.filter.label)
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(model.isFilterExpanded ? 90 : 0))
+            }
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(model.isFilterExpanded ? "收起筛选" : "展开筛选")
+        .accessibilityLabel("筛选，当前 \(model.filter.label)")
+        .accessibilityHint(model.isFilterExpanded ? "收起筛选选项" : "展开筛选选项")
+    }
+
+    private var expandAnimation: Animation? {
+        accessibility.reduceMotion ? nil : .easeInOut(duration: 0.18)
+    }
+
+    /// 四段选项；侧栏太窄或字号放大放不下时退化为菜单
+    private var filterOptions: some View {
         ViewThatFits(in: .horizontal) {
             Picker("筛选", selection: $model.filter) {
                 ForEach(AppModel.LibraryFilter.allCases) { filter in
@@ -98,8 +154,6 @@ struct WallpaperListView: View {
             .labelsHidden()
             .controlSize(.small)
         }
-        .padding(.horizontal, PKD.Space.s)
-        .padding(.vertical, PKD.Space.xs)
     }
 
     private var footer: some View {
