@@ -18,12 +18,14 @@ struct WallpaperDetailView: View {
 
     private func detail(for item: WallpaperItem) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 previewSection(item)
                 metadataSection(item)
+                    .cardSurface()
                 entrySection(item)
+                    .cardSurface()
             }
-            .padding(20)
+            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(item) }
@@ -52,7 +54,12 @@ struct WallpaperDetailView: View {
         }
         .frame(height: 260)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
     }
 
     // MARK: - 元数据
@@ -205,8 +212,10 @@ struct WallpaperDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.08)).frame(height: 0.5)
+        }
     }
 }
 

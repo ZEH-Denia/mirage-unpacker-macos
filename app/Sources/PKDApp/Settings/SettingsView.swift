@@ -13,9 +13,12 @@ struct SettingsView: View {
 private struct SettingsForm: View {
     @ObservedObject var settings: SettingsStore
     let model: AppModel
+    @EnvironmentObject private var appearance: AppearanceSettings
 
     var body: some View {
         Form {
+            appearanceSection
+
             Section("路径") {
                 LabeledContent("素材库") {
                     HStack(spacing: 8) {
@@ -125,7 +128,104 @@ private struct SettingsForm: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 580, height: 540)
+        .frame(width: 600, height: 680)
+    }
+
+    // MARK: - 外观
+
+    @ViewBuilder
+    private var appearanceSection: some View {
+        Section("外观 · 液态玻璃") {
+            Toggle("启用玻璃效果", isOn: $appearance.enabled)
+
+            Toggle("使用系统原生液态玻璃", isOn: $appearance.useNativeGlass)
+                .disabled(!AppearanceSettings.nativeGlassSupported)
+                .help(AppearanceSettings.nativeGlassSupported
+                      ? "调用 macOS 26 起的原生 GlassEffect"
+                      : "当前系统版本不支持，只能使用自绘实现")
+
+            Text(AppearanceSettings.nativeGlassSupported
+                 ? (appearance.nativeActive
+                    ? "正在使用系统原生液态玻璃：模糊强度由系统控制，色调与圆角可调。"
+                    : "已切换到自绘实现：全部参数可调，但模糊质感与系统原生略有差异。")
+                 : "当前系统低于 macOS 26，只能使用自绘实现。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("色调") {
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(appearance.tintColor)
+                        .frame(width: 28, height: 16)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .strokeBorder(.white.opacity(0.3), lineWidth: 0.5)
+                        }
+                    Slider(value: $appearance.tintHue, in: 0...1)
+                }
+            }
+
+            LabeledContent("色调浓度") {
+                Slider(value: $appearance.tintStrength, in: 0...1)
+            }
+
+            LabeledContent("饱和度") {
+                HStack(spacing: 10) {
+                    Slider(value: $appearance.tintSaturation, in: 0...1)
+                    Text(appearance.tintSaturation < 0.02 ? "黑白" : String(format: "%.0f%%", appearance.tintSaturation * 100))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+            .help("0 为纯黑白灰，适合简约风格；调高则背景流光带颜色")
+
+            LabeledContent("圆角") {
+                HStack(spacing: 10) {
+                    Slider(value: $appearance.cornerRadius, in: 8...26)
+                    Text("\(Int(appearance.cornerRadius))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, alignment: .trailing)
+                }
+            }
+
+            LabeledContent("磨砂强度") {
+                Slider(value: $appearance.blurStrength, in: 0.05...1)
+            }
+            .disabled(appearance.nativeActive)
+
+            LabeledContent("边缘高光") {
+                Slider(value: $appearance.highlight, in: 0...1)
+            }
+            .disabled(appearance.nativeActive)
+
+            Toggle("面板投影", isOn: $appearance.shadow)
+                .disabled(appearance.nativeActive)
+
+            Divider()
+
+            Toggle("背景流光", isOn: $appearance.liquidMotion)
+
+            LabeledContent("流光强度") {
+                Slider(value: $appearance.backdropStrength, in: 0...1)
+            }
+
+            LabeledContent("流动速度") {
+                HStack(spacing: 10) {
+                    Slider(value: $appearance.motionSpeed, in: 0.2...2)
+                    Text(String(format: "%.1f×", appearance.motionSpeed))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
+            }
+            .disabled(!appearance.liquidMotion)
+
+            Button("恢复默认外观") {
+                appearance.reset()
+            }
+        }
     }
 
     private func chooseLibraryRoot() {

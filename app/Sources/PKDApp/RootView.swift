@@ -3,35 +3,26 @@ import PKDKit
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var appearance: AppearanceSettings
 
     var body: some View {
-        NavigationSplitView {
-            WallpaperListView()
-                .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
-        } content: {
-            VStack(spacing: 0) {
-                SegmentedTabs(
-                    selection: $model.selectedTab,
-                    badges: [.queue: model.queueBadgeCount]
-                )
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+        ZStack {
+            LiquidBackdrop(appearance: appearance)
 
-                Divider()
+            HStack(spacing: 10) {
+                WallpaperListView()
+                    .frame(minWidth: 280, idealWidth: 330, maxWidth: 460)
+                    .pkdGlass(appearance)
 
-                switch model.selectedTab {
-                case .detail:
-                    WallpaperDetailView()
-                case .queue:
-                    JobQueueView()
-                case .storage:
-                    StorageView()
-                }
+                centerColumn
+                    .frame(minWidth: 440, maxWidth: .infinity, maxHeight: .infinity)
+                    .pkdGlass(appearance)
+
+                LogPanelView()
+                    .frame(minWidth: 280, idealWidth: 380, maxWidth: 520)
+                    .pkdGlass(appearance)
             }
-            .navigationSplitViewColumnWidth(min: 440, ideal: 560)
-        } detail: {
-            LogPanelView()
-                .navigationSplitViewColumnWidth(min: 280, ideal: 400)
+            .padding(10)
         }
         .toolbar { toolbarContent }
         .safeAreaInset(edge: .top, spacing: 0) { engineBanner }
@@ -52,6 +43,35 @@ struct RootView: View {
             Button("好", role: .cancel) { model.alertMessage = nil }
         } message: {
             Text(model.alertMessage ?? "")
+        }
+    }
+
+    // MARK: - 中间栏
+
+    private var centerColumn: some View {
+        VStack(spacing: 0) {
+            SegmentedTabs(
+                selection: $model.selectedTab,
+                badges: [.queue: model.queueBadgeCount]
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+
+            ZStack {
+                switch model.selectedTab {
+                case .detail:
+                    WallpaperDetailView()
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                case .queue:
+                    JobQueueView()
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                case .storage:
+                    StorageView()
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                }
+            }
+            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: model.selectedTab)
         }
     }
 

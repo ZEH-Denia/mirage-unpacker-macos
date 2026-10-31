@@ -5,11 +5,13 @@ import PKDKit
 struct PKDApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
+    @StateObject private var appearance = AppearanceSettings()
 
     var body: some Scene {
         WindowGroup("PKD 解包器") {
             RootView()
                 .environmentObject(model)
+                .environmentObject(appearance)
         }
         .defaultSize(width: 1240, height: 800)
         .commands {
@@ -34,6 +36,7 @@ struct PKDApp: App {
         Settings {
             SettingsView()
                 .environmentObject(model)
+                .environmentObject(appearance)
         }
     }
 }

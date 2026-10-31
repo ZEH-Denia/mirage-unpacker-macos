@@ -126,6 +126,7 @@ struct StorageView: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
     }
 
     private func row(_ item: StorageItem) -> some View {
@@ -203,7 +204,7 @@ struct StorageView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(.ultraThinMaterial)
     }
 
     private var confirmBinding: Binding<Bool> {

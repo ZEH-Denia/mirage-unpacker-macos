@@ -34,7 +34,8 @@ struct WallpaperListView: View {
             }
         }
         .listStyle(.sidebar)
-        .searchable(text: $model.searchText, placement: .sidebar, prompt: "搜索标题或 ID")
+        .scrollContentBackground(.hidden)
+        .searchable(text: $model.searchText, prompt: "搜索标题或 ID")
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .toolbar {
             ToolbarItem {
@@ -75,8 +76,11 @@ struct WallpaperListView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.bar)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.07)).frame(height: 0.5)
+        }
     }
 }
 
@@ -90,16 +94,18 @@ struct WallpaperRow: View {
 
     @EnvironmentObject private var model: AppModel
     @StateObject private var thumbnail = ThumbnailState()
+    @StateObject private var hover = HoverState()
 
     var body: some View {
         HStack(spacing: 10) {
             thumbnailView
                 .frame(width: 46, height: 46)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(.quaternary, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
                 }
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
@@ -135,8 +141,17 @@ struct WallpaperRow: View {
                     .help("该壁纸没有可解包的 pkg（视频类壁纸）")
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .background {
+            if hover.isHovering {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            }
+        }
         .opacity(item.isExtractable ? 1 : 0.55)
+        .onHover { hover.isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hover.isHovering)
         .task(id: item.id) {
             await loadThumbnail()
         }
@@ -148,9 +163,10 @@ struct WallpaperRow: View {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
+                .transition(.opacity)
         } else {
             ZStack {
-                Rectangle().fill(.quaternary.opacity(0.4))
+                Rectangle().fill(.quaternary.opacity(0.35))
                 Image(systemName: "photo")
                     .foregroundStyle(.tertiary)
             }

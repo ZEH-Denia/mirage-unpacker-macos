@@ -120,8 +120,11 @@ struct LogTextView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
-        textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
+        // 透明背景，让底下的玻璃透上来
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
         textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         textView.isAutomaticQuoteSubstitutionEnabled = false

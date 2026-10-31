@@ -1,36 +1,54 @@
 import SwiftUI
 
+/// 悬停状态。CLT 环境缺 SwiftUIMacros，`@State` 不可用，只能用 ObservableObject。
+final class HoverState: ObservableObject {
+    @Published var isHovering = false
+}
+
 /// 自绘分段控件：系统 Picker 的分段标签挂不了角标，
-/// 而「队列」需要在有任务时提示，所以这里自己画一个。
+/// 且需要跟随液态玻璃的质感，所以自己画。
 struct SegmentedTabs: View {
     @Binding var selection: AppModel.Tab
-    /// 每个页签右上角的数字角标（0 表示不显示）
+    /// 每个页签的角标（0 表示不显示）
     var badges: [AppModel.Tab: Int] = [:]
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(AppModel.Tab.allCases) { tab in
-                segment(tab)
+                TabSegment(
+                    tab: tab,
+                    isSelected: selection == tab,
+                    badge: badges[tab] ?? 0
+                ) {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                        selection = tab
+                    }
+                }
             }
         }
-        .padding(2)
+        .padding(3)
         .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(.quaternary, lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5)
                 }
         }
     }
+}
 
-    private func segment(_ tab: AppModel.Tab) -> some View {
-        let isSelected = selection == tab
-        let badge = badges[tab] ?? 0
+private struct TabSegment: View {
+    let tab: AppModel.Tab
+    let isSelected: Bool
+    let badge: Int
+    let action: () -> Void
 
-        return Button {
-            selection = tab
-        } label: {
+    @StateObject private var hover = HoverState()
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 4) {
                 Text(tab.title)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
@@ -43,22 +61,43 @@ struct SegmentedTabs: View {
                         .padding(.horizontal, 4)
                         .padding(.vertical, 0.5)
                         .background(Capsule().fill(.red))
+                        .shadow(color: .red.opacity(0.5), radius: 4)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 3)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(.regularMaterial)
-                    .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: scheme == .light
+                                ? [.white, Color(white: 0.97)]
+                                : [.white.opacity(0.26), .white.opacity(0.12)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(
+                                scheme == .light ? Color.black.opacity(0.07) : Color.white.opacity(0.30),
+                                lineWidth: 0.5
+                            )
+                    }
+                    .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+            } else if hover.isHovering {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(0.07))
             }
         }
+        .onHover { hover.isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: isSelected)
-        .animation(.easeOut(duration: 0.15), value: badge)
+        .animation(.easeOut(duration: 0.12), value: hover.isHovering)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: badge)
     }
 }

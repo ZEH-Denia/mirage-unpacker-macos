@@ -18,6 +18,7 @@ struct JobQueueView: View {
                 }
             }
             .listStyle(.inset)
+            .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
         }
     }
@@ -50,8 +51,10 @@ struct JobQueueView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.08)).frame(height: 0.5)
+        }
     }
 }
 
