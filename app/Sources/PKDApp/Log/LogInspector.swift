@@ -7,7 +7,9 @@ import PKDKit
 struct LogInspector: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var accessibility: AccessibilitySettings
-    @StateObject private var controller = LogController()
+
+    /// 控制器挂在 AppModel 上，菜单栏「清空日志」才能拿到同一实例
+    private var controller: LogController { model.logController }
 
     private let ticker = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
@@ -179,6 +181,15 @@ struct LogTextView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        // 细窄的 overlay 滚动条：只在滚动时出现，不占列宽（HIG：面板内用较小滚动条）
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        if NSScroller.preferredScrollerStyle == .overlay {
+            scrollView.scrollerStyle = .overlay
+        }
+        scrollView.verticalScroller?.controlSize = .small
+        scrollView.horizontalScrollElasticity = .none
 
         controller.attach(textView)
         return scrollView

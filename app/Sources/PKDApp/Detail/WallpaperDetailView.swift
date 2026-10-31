@@ -30,9 +30,19 @@ struct WallpaperDetailView: View {
             .padding(PKD.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollIndicators(.hidden)
         .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(item) }
         .task(id: item.id) {
             model.loadInfo(for: item)
+        }
+    }
+
+    /// 预览区高度随窗口档位变化，替代原先写死的 240
+    private var heroHeight: CGFloat {
+        switch model.layout {
+        case .wide: return PKD.Size.heroWide
+        case .medium: return PKD.Size.heroMedium
+        case .narrow: return PKD.Size.heroNarrow
         }
     }
 
@@ -54,7 +64,7 @@ struct WallpaperDetailView: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .frame(height: PKD.Size.heroHeight)
+        .frame(height: heroHeight)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous))
     }
@@ -85,14 +95,16 @@ struct WallpaperDetailView: View {
     // MARK: - 元数据
 
     private func metadataSection(_ item: WallpaperItem) -> some View {
-        VStack(alignment: .leading, spacing: PKD.Space.xs) {
-            KeyValueRow("Workshop ID") {
+        let vertical = model.layout == .narrow
+
+        return VStack(alignment: .leading, spacing: PKD.Space.xs) {
+            KeyValueRow("Workshop ID", vertical: vertical) {
                 Text(item.id)
                     .font(.callout.monospaced())
                     .textSelection(.enabled)
             }
 
-            KeyValueRow("输出目录") {
+            KeyValueRow("输出目录", vertical: vertical) {
                 Text(OutputLayout.outputDirectory(for: item, root: model.settings.outputRoot).path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -101,7 +113,7 @@ struct WallpaperDetailView: View {
             }
 
             if model.xrayFlags[item.id] == true {
-                KeyValueRow("X-Ray") {
+                KeyValueRow("X-Ray", vertical: vertical) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("含 X-Ray 效果，解包时自动分离正常层与 X-Ray 层")
                             .font(.caption)
@@ -126,7 +138,7 @@ struct WallpaperDetailView: View {
             }
 
             if let issue = item.issue {
-                KeyValueRow("提示") {
+                KeyValueRow("提示", vertical: vertical) {
                     Text(issueText(issue))
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -176,17 +188,20 @@ struct WallpaperDetailView: View {
     // MARK: - 操作条（按你的要求保留详情页底栏）
 
     private func actionBar(_ item: WallpaperItem) -> some View {
-        HStack(spacing: PKD.Space.xs) {
+        // 窄窗口下按钮文字降级为图标；作用域是「当前这一个」，与工具栏的「所选」区分
+        let showTitle = model.layout != .narrow
+
+        return HStack(spacing: PKD.Space.xs) {
             Button {
-                model.selection = [item.id]
-                model.requestExtraction()
+                model.requestExtraction(for: [item])
             } label: {
                 Label(
-                    model.settings.exportImagesOnly ? "导出图片" : "解包",
+                    model.settings.exportImagesOnly ? "导出此壁纸图片" : "解包此壁纸",
                     systemImage: model.settings.exportImagesOnly
                         ? "photo.on.rectangle.angled"
                         : "shippingbox.and.arrow.backward"
                 )
+                .labelStyle(AdaptiveLabelStyle(showTitle: showTitle))
             }
             .buttonStyle(.borderedProminent)
             .disabled(!item.isExtractable)
@@ -196,6 +211,7 @@ struct WallpaperDetailView: View {
                     model.openOutput(for: item)
                 } label: {
                     Label("打开输出", systemImage: "folder")
+                        .labelStyle(AdaptiveLabelStyle(showTitle: showTitle))
                 }
             }
 
@@ -205,6 +221,7 @@ struct WallpaperDetailView: View {
                 model.revealInFinder(item.pkgURL ?? item.folderURL)
             } label: {
                 Label("在 Finder 中显示", systemImage: "magnifyingglass")
+                    .labelStyle(AdaptiveLabelStyle(showTitle: showTitle))
             }
         }
         .padding(.horizontal, PKD.Space.m)

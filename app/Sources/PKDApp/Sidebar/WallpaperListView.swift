@@ -7,7 +7,7 @@ struct WallpaperListView: View {
 
     var body: some View {
         List(selection: $model.selection) {
-            Section("素材库") {
+            Section {
                 ForEach(model.filteredItems) { item in
                     WallpaperRow(item: item)
                         .tag(item.id)
@@ -34,10 +34,19 @@ struct WallpaperListView: View {
                             }
                         }
                 }
+            } header: {
+                HStack {
+                    Text("素材库")
+                    Spacer()
+                    Text("\(model.filteredItems.count)")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .listStyle(.sidebar)
+        .scrollIndicators(.hidden)
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "搜索标题或 ID")
+        .safeAreaInset(edge: .top, spacing: 0) { filterBar }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .overlay {
             if model.filteredItems.isEmpty {
@@ -47,16 +56,50 @@ struct WallpaperListView: View {
                         systemImage: model.isScanning ? "hourglass" : "photo.on.rectangle.angled"
                     )
                 } description: {
-                    Text(model.isScanning ? "正在读取素材库" : "检查素材库路径是否正确，或调整筛选条件")
+                    Text(emptyDescription)
                 } actions: {
                     Button("重新扫描") { model.refresh() }
                         .disabled(model.isScanning)
-                    if model.filter != .all {
-                        Button("清除筛选") { model.filter = .all }
-                    }
                 }
             }
         }
+    }
+
+    private var emptyDescription: String {
+        if model.isScanning {
+            return "正在读取素材库"
+        }
+        if model.filter != .all {
+            return "当前筛选：\(model.filter.label)。切换上方筛选，或检查素材库路径。"
+        }
+        return "检查素材库路径是否正确。"
+    }
+
+    /// 筛选与素材放在一起：常驻在列表上方（不用 Section header，避免随内容滚走）
+    private var filterBar: some View {
+        ViewThatFits(in: .horizontal) {
+            Picker("筛选", selection: $model.filter) {
+                ForEach(AppModel.LibraryFilter.allCases) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+            .accessibilityLabel("筛选")
+
+            Picker("筛选", selection: $model.filter) {
+                ForEach(AppModel.LibraryFilter.allCases) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .controlSize(.small)
+        }
+        .padding(.horizontal, PKD.Space.s)
+        .padding(.vertical, PKD.Space.xs)
     }
 
     private var footer: some View {
@@ -94,24 +137,10 @@ struct WallpaperRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                HStack(spacing: PKD.Space.xs) {
-                    Text(item.typeLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if item.pkgSize > 0 {
-                        Text(item.sizeText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if model.xrayFlags[item.id] == true {
-                        StatusTag(symbol: "eye", text: "X-Ray", tint: .orange)
-                    }
-
-                    if model.history.entry(for: item.id) != nil {
-                        StatusTag(symbol: "checkmark.circle", text: "已解包", tint: .green)
-                    }
+                ViewThatFits(in: .horizontal) {
+                    metadataLine(full: true)
+                        .fixedSize(horizontal: true, vertical: false)
+                    metadataLine(full: false)
                 }
             }
 
@@ -129,6 +158,31 @@ struct WallpaperRow: View {
         .task(id: item.id) {
             guard appearance.showThumbnails else { return }
             await loadThumbnail()
+        }
+    }
+
+    /// 侧栏行的次要信息：宽度够时显示完整文案，不够时只留符号
+    private func metadataLine(full: Bool) -> some View {
+        HStack(spacing: PKD.Space.xs) {
+            if full {
+                Text(item.typeLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if item.pkgSize > 0 {
+                Text(item.sizeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if model.xrayFlags[item.id] == true {
+                StatusTag(symbol: "eye", text: full ? "X-Ray" : "", tint: .orange)
+            }
+
+            if model.history.entry(for: item.id) != nil {
+                StatusTag(symbol: "checkmark.circle", text: full ? "已解包" : "", tint: .green)
+            }
         }
     }
 

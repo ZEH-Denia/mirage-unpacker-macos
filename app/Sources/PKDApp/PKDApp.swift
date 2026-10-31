@@ -22,10 +22,11 @@ struct PKDApp: App {
                 .onAppear { appearance.applyTheme() }
         }
         .defaultSize(width: 1100, height: 740)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("刷新素材库") {
-                    model.refresh()
+                    model.refreshCurrentContext()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
@@ -33,11 +34,44 @@ struct PKDApp: App {
                     model.requestExtraction()
                 }
                 .keyboardShortcut(.return, modifiers: .command)
+                .disabled(model.extractableSelection.isEmpty)
 
                 Button("取消全部任务") {
                     model.queue.cancelAll()
                 }
                 .keyboardShortcut(".", modifiers: .command)
+                .disabled(model.queue.activeCount == 0)
+
+                Divider()
+
+                Button("打开输出目录") {
+                    if let item = model.focusedItem {
+                        model.openOutput(for: item)
+                    }
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(model.focusedItem.map { model.history.entry(for: $0.id) != nil } != true)
+
+                Button("在 Finder 中显示") {
+                    if let item = model.focusedItem {
+                        model.revealInFinder(item.pkgURL ?? item.folderURL)
+                    }
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(model.focusedItem == nil)
+            }
+
+            CommandMenu("任务") {
+                Button("重试失败任务") { model.queue.retryAllFailed() }
+                    .disabled(model.queue.failedCount == 0)
+
+                Button("清除已完成任务") { model.queue.removeFinished() }
+                    .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
+
+                Divider()
+
+                Button("取消全部任务") { model.queue.cancelAll() }
+                    .disabled(model.queue.activeCount == 0)
             }
 
             CommandMenu("视图") {
@@ -50,13 +84,29 @@ struct PKDApp: App {
 
                 Divider()
 
+                Menu("筛选") {
+                    ForEach(AppModel.LibraryFilter.allCases) { filter in
+                        Button(filter.label) { model.filter = filter }
+                    }
+                }
+
+                Divider()
+
                 Button(model.isInspectorPresented ? "隐藏日志" : "显示日志") {
-                    model.isInspectorPresented.toggle()
+                    model.toggleInspector()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .option])
 
+                Button("清空日志") {
+                    model.logController.clear()
+                }
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(!model.logController.hasContent)
+
                 Button(model.columnVisibility == .detailOnly ? "显示侧栏" : "隐藏侧栏") {
-                    model.columnVisibility = model.columnVisibility == .detailOnly ? .all : .detailOnly
+                    model.setColumnVisibility(
+                        model.columnVisibility == .detailOnly ? .all : .detailOnly
+                    )
                 }
                 .keyboardShortcut("s", modifiers: [.command, .control])
             }

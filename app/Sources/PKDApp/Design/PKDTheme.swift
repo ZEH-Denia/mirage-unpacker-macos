@@ -31,7 +31,9 @@ enum PKD {
 
     enum Size {
         static let thumb: CGFloat = 40
-        static let heroHeight: CGFloat = 240
+        static let heroWide: CGFloat = 300
+        static let heroMedium: CGFloat = 240
+        static let heroNarrow: CGFloat = 180
         static let sidebarMin: CGFloat = 240
         static let sidebarIdeal: CGFloat = 280
         static let sidebarMax: CGFloat = 360
@@ -39,6 +41,22 @@ enum PKD {
         static let inspectorMin: CGFloat = 260
         static let inspectorIdeal: CGFloat = 340
         static let inspectorMax: CGFloat = 560
+        static let windowMinWidth: CGFloat = 640
+        static let windowMinHeight: CGFloat = 520
+    }
+
+    /// 窗口宽度断点。全部由列最小宽推导：240 + 520 + 260 = 1020。
+    ///
+    /// 折叠阈值用 `<=` 而不是 `<`：`.windowResizability(.contentMinSize)` 下三列全开时
+    /// 窗口下限就是 1020，用 `<=` 才能在拖到边界时触发折叠、把下限降到 760。
+    /// 恢复阈值比折叠阈值高 40pt，避免在边界来回抖动。
+    enum Breakpoint {
+        static let tabIcons: CGFloat = 1100
+        static let tabMenu: CGFloat = 900
+        static let inspectorCollapse: CGFloat = 1020
+        static let inspectorRestore: CGFloat = 1060
+        static let sidebarCollapse: CGFloat = 780
+        static let sidebarRestore: CGFloat = 820
     }
 
     /// 全部走语义色，深浅色自动适配；不再出现 `.white.opacity()` / `Color(white:)`。

@@ -7,7 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var accessibility: AccessibilitySettings
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $model.columnVisibility) {
+        NavigationSplitView(columnVisibility: columnBinding) {
             WallpaperListView()
                 .navigationSplitViewColumnWidth(
                     min: PKD.Size.sidebarMin,
@@ -18,7 +18,7 @@ struct RootView: View {
             ContentColumn()
                 .navigationSplitViewColumnWidth(min: PKD.Size.contentMin, ideal: 760)
                 .background(PKD.Palette.canvas)
-                .inspector(isPresented: $model.isInspectorPresented) {
+                .inspector(isPresented: inspectorBinding) {
                     LogInspector()
                         .inspectorColumnWidth(
                             min: PKD.Size.inspectorMin,
@@ -34,6 +34,18 @@ struct RootView: View {
         .navigationSplitViewStyle(.balanced)
         .tint(appearance.accentColor)
         .toolbar { toolbarContent }
+        .frame(minWidth: PKD.Size.windowMinWidth, minHeight: PKD.Size.windowMinHeight)
+        .background(
+            WindowConfigurator(
+                minSize: NSSize(width: PKD.Size.windowMinWidth, height: PKD.Size.windowMinHeight),
+                debugWidth: UserDefaults.standard.object(forKey: "pkd.debug.windowWidth") as? CGFloat
+            )
+        )
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            // 必须测 NavigationSplitView 外层：折叠检查器会改变内容列宽度，
+            // 若测内容列会形成「折叠→变宽→展开→变窄」的回环
+            Task { @MainActor in model.noteWindowWidth(width) }
+        }
         .alert("确认解包", isPresented: confirmBinding) {
             Button("取消", role: .cancel) { model.pendingConfirm = nil }
             Button("开始解包") {
@@ -56,42 +68,32 @@ struct RootView: View {
 
     // MARK: - 工具栏
 
+    /// 只保留一个后缘组：HIG 要求后缘项常驻、群组不超过三个，
+    /// 且 `.primaryAction` 本身就是右对齐语义，不需要 ToolbarSpacer。
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Menu {
-                Picker("筛选", selection: $model.filter) {
-                    ForEach(AppModel.LibraryFilter.allCases) { filter in
-                        Text(filter.label).tag(filter)
-                    }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                Label("筛选", systemImage: "line.3.horizontal.decrease.circle")
-            }
-            .help("筛选列表")
-        }
-
-        ToolbarItem(placement: .primaryAction) {
-            Picker("视图", selection: $model.selectedTab) {
-                ForEach(AppModel.Tab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 190)
-            .help("切换详情 / 队列 / 存储")
-        }
-
         ToolbarItemGroup(placement: .primaryAction) {
+            tabSwitcher
+                .help("切换详情 / 队列 / 存储（⌘1 ⌘2 ⌘3）")
+
             Button {
-                model.refresh()
+                model.refreshCurrentContext()
             } label: {
                 Label("刷新", systemImage: "arrow.clockwise")
             }
-            .help("重新扫描素材库（⌘R）")
-            .disabled(model.isScanning)
+            .labelStyle(.iconOnly)
+            .help("刷新当前页面（⌘R）")
+            .disabled(model.isScanning || model.isScanningStorage)
+
+            Button {
+                model.toggleInspector()
+            } label: {
+                Label("日志", systemImage: "sidebar.trailing")
+            }
+            .labelStyle(.iconOnly)
+            .help("显示或隐藏日志（⌥⌘L）")
+
+            moreMenu
 
             Button {
                 model.requestExtraction()
@@ -103,28 +105,138 @@ struct RootView: View {
                         : "shippingbox.and.arrow.backward"
                 )
             }
-            .help(model.settings.exportImagesOnly ? "只导出正常层 / X-Ray 层图片（⌘↩）" : "解包所选壁纸（⌘↩）")
+            .labelStyle(.iconOnly)
+            .help(extractHelp)
             .disabled(model.extractableSelection.isEmpty)
         }
+    }
 
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                model.isInspectorPresented.toggle()
-            } label: {
-                Label("日志", systemImage: "sidebar.trailing")
+    private var extractHelp: String {
+        let count = model.extractableSelection.count
+        let suffix = count > 1 ? "（\(count) 项）" : ""
+        return model.settings.exportImagesOnly
+            ? "导出所选壁纸的图片\(suffix)（⌘↩）"
+            : "解包所选壁纸\(suffix)（⌘↩）"
+    }
+
+    /// 视图切换：宽窗口用文字分段，中等用图标分段，窄窗口退化为菜单
+    @ViewBuilder
+    private var tabSwitcher: some View {
+        switch model.layout {
+        case .wide:
+            Picker("视图", selection: $model.selectedTab) {
+                ForEach(AppModel.Tab.allCases) { tab in
+                    Text(tab.title).tag(tab)
+                }
             }
-            .help("显示或隐藏日志（⌥⌘L）")
-        }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
 
-        ToolbarItem(placement: .secondaryAction) {
+        case .medium:
+            Picker("视图", selection: $model.selectedTab) {
+                ForEach(AppModel.Tab.allCases) { tab in
+                    Image(systemName: tab.icon).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+
+        case .narrow:
+            Picker("视图", selection: $model.selectedTab) {
+                ForEach(AppModel.Tab.allCases) { tab in
+                    Label(tab.title, systemImage: tab.icon).tag(tab)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+        }
+    }
+
+    /// 页面级命令合并进一个「更多」菜单，随页签变化
+    private var moreMenu: some View {
+        Menu {
+            switch model.selectedTab {
+            case .detail:
+                Button {
+                    if let item = model.focusedItem {
+                        model.revealInFinder(item.pkgURL ?? item.folderURL)
+                    }
+                } label: {
+                    Label("在 Finder 中显示", systemImage: "magnifyingglass")
+                }
+                .disabled(model.focusedItem == nil)
+
+                Button {
+                    if let item = model.focusedItem {
+                        model.openOutput(for: item)
+                    }
+                } label: {
+                    Label("打开输出目录", systemImage: "folder")
+                }
+                .disabled(model.focusedItem == nil || model.history.entry(for: model.focusedItem?.id ?? "") == nil)
+
+            case .queue:
+                Button {
+                    model.queue.retryAllFailed()
+                } label: {
+                    Label("重试失败任务", systemImage: "arrow.clockwise.circle")
+                }
+                .disabled(model.queue.failedCount == 0)
+
+                Button {
+                    model.queue.removeFinished()
+                } label: {
+                    Label("清除已完成任务", systemImage: "trash")
+                }
+                .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
+
+            case .storage:
+                Button {
+                    model.selectAllStorage(nil)
+                } label: {
+                    Label("全选", systemImage: "checklist")
+                }
+                .disabled(model.storageItems.isEmpty)
+
+                Button(role: .destructive) {
+                    model.requestTrashSelection()
+                } label: {
+                    Label("移到废纸篓", systemImage: "trash")
+                }
+                .disabled(model.storageSelection.isEmpty)
+            }
+
+            Divider()
+
             Button {
                 model.queue.cancelAll()
             } label: {
-                Label("取消全部", systemImage: "stop.circle")
+                Label("取消全部任务", systemImage: "stop.circle")
             }
-            .help("取消所有进行中的任务（⌘.）")
             .disabled(model.queue.activeCount == 0)
+        } label: {
+            Label("更多", systemImage: "ellipsis.circle")
         }
+        .labelStyle(.iconOnly)
+        .help("更多操作")
+    }
+
+    // MARK: - 绑定
+
+    private var columnBinding: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { model.columnVisibility },
+            set: { model.setColumnVisibility($0) }
+        )
+    }
+
+    private var inspectorBinding: Binding<Bool> {
+        Binding(
+            get: { model.isInspectorPresented },
+            set: { model.setInspectorPresented($0) }
+        )
     }
 
     // MARK: - 提示

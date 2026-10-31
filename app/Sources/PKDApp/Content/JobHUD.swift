@@ -11,7 +11,7 @@ struct JobHUD: View {
         Group {
             if model.queue.activeCount > 0 {
                 Button {
-                    model.isInspectorPresented = true
+                    model.setInspectorPresented(true)
                 } label: {
                     HStack(spacing: PKD.Space.xs) {
                         ProgressView()

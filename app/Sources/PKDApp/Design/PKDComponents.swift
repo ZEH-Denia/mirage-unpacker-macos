@@ -1,5 +1,90 @@
 import SwiftUI
+import AppKit
 import PKDKit
+
+// MARK: - 文字/图标自适应标签
+
+/// 空间不足时把按钮文字降级为图标。
+///
+/// 不能写成 `.labelStyle(cond ? .titleAndIcon : .iconOnly)`——三元两侧类型不同，
+/// `labelStyle` 是泛型，编译不过。这里用一个具体类型包住分支。
+struct AdaptiveLabelStyle: LabelStyle {
+    var showTitle: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon
+            if showTitle {
+                configuration.title
+            }
+        }
+    }
+}
+
+// MARK: - 窗口配置
+
+/// 设置窗口内容最小尺寸；若 `pkd.debug.windowWidth` 存在则按该宽度启动（用于截图回归）。
+///
+/// 直接设 `contentMinSize` 而不是只依赖 `.windowResizability(.contentMinSize)`：
+/// NavigationSplitView 会把列最小宽并入下限（240+520+260=1020），
+/// 那样窗口永远到不了 780 的折叠阈值。
+struct WindowConfigurator: NSViewRepresentable {
+    var minSize: NSSize
+    var debugWidth: CGFloat?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { apply(to: view) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { apply(to: nsView) }
+    }
+
+    private func apply(to view: NSView) {
+        guard let window = view.window else { return }
+        window.contentMinSize = minSize
+
+        if let debugWidth, abs(window.frame.width - debugWidth) > 1 {
+            var frame = window.frame
+            frame.size.width = debugWidth
+            window.setFrame(frame, display: true)
+        }
+    }
+}
+
+// MARK: - 滚动条外观
+
+/// 只调整滚动条外观，不改变滚动行为：overlay + 自动隐藏 + 小号。
+///
+/// SwiftUI 的 `.scrollIndicators(.hidden)` 在个别系统版本上对 `List` 不生效，
+/// 用这个作为兜底；也用于日志面板的 NSScrollView。
+struct OverlayScrollerConfigurator: NSViewRepresentable {
+    var size: NSControl.ControlSize = .small
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { configure(from: view) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { configure(from: nsView) }
+    }
+
+    private func configure(from view: NSView) {
+        guard let scrollView = sequence(first: view, next: \.superview)
+            .first(where: { $0 is NSScrollView }) as? NSScrollView else { return }
+
+        // 尊重系统「始终显示滚动条」：只有 overlay 偏好时才强制 overlay
+        if NSScroller.preferredScrollerStyle == .overlay {
+            scrollView.scrollerStyle = .overlay
+        }
+        scrollView.autohidesScrollers = true
+        scrollView.verticalScroller?.controlSize = size
+    }
+}
 
 // MARK: - 引擎告警条
 
@@ -64,19 +149,25 @@ struct SidebarStatus: View {
 /// 元数据键值对，用对齐 + 分隔线表达层级，不再用卡片描边。
 struct KeyValueRow<Content: View>: View {
     let label: String
+    var vertical: Bool
     @ViewBuilder let content: () -> Content
 
-    init(_ label: String, @ViewBuilder content: @escaping () -> Content) {
+    init(_ label: String, vertical: Bool = false, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
+        self.vertical = vertical
         self.content = content
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: PKD.Space.s) {
+        let layout = vertical
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: PKD.Space.s))
+
+        layout {
             Text(label)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .frame(width: 96, alignment: .leading)
+                .frame(minWidth: vertical ? nil : 88, alignment: .leading)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

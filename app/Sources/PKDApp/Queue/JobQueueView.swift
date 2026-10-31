@@ -23,28 +23,7 @@ struct JobQueueView: View {
                     }
                 }
                 .listStyle(.inset)
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button {
-                        model.queue.retryAllFailed()
-                    } label: {
-                        Label("重试失败", systemImage: "arrow.clockwise.circle")
-                    }
-                    .disabled(model.queue.failedCount == 0)
-
-                    Button {
-                        model.queue.removeFinished()
-                    } label: {
-                        Label("清除已完成", systemImage: "trash")
-                    }
-                    .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
-                } label: {
-                    Label("更多", systemImage: "ellipsis.circle")
-                }
-                .help("队列操作")
+                .scrollIndicators(.hidden)
             }
         }
     }
@@ -139,7 +118,8 @@ struct JobRow: View {
                 }
 
                 if job.report?.verdict.isSuccess == true {
-                    Button(job.exportedImages == nil ? "打开输出" : "打开图片目录") {
+                    // 这里只做「在 Finder 中定位」，与详情页的「打开输出」区分开
+                    Button("在 Finder 中显示") {
                         model.revealInFinder(job.exportedImages?.directory ?? job.outputDirectory)
                     }
                     .buttonStyle(.link)

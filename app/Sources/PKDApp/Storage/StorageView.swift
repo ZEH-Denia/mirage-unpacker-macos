@@ -32,28 +32,6 @@ struct StorageView: View {
                 list
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button {
-                        model.selectAllStorage(nil)
-                    } label: {
-                        Label("全选", systemImage: "checklist")
-                    }
-                    .disabled(model.storageItems.isEmpty)
-
-                    Button(role: .destructive) {
-                        model.requestTrashSelection()
-                    } label: {
-                        Label("移到废纸篓", systemImage: "trash")
-                    }
-                    .disabled(model.storageSelection.isEmpty)
-                } label: {
-                    Label("更多", systemImage: "ellipsis.circle")
-                }
-                .help("存储操作")
-            }
-        }
         .onAppear {
             if model.storageItems.isEmpty {
                 model.refreshStorage()
@@ -115,7 +93,7 @@ struct StorageView: View {
                                 .tag(item.id)
                                 .contextMenu {
                                     Button("在 Finder 中显示") {
-                                        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                                        model.revealInFinder(item.url)
                                     }
                                     Button("移到废纸篓", role: .destructive) {
                                         model.storageSelection = [item.id]
@@ -139,6 +117,7 @@ struct StorageView: View {
             }
         }
         .listStyle(.inset)
+        .scrollIndicators(.hidden)
     }
 
     private func row(_ item: StorageItem) -> some View {

@@ -20,6 +20,15 @@ final class AppModel: ObservableObject {
             case .storage: return "存储"
             }
         }
+
+        /// 窄窗口下分段控件降级用的符号
+        var icon: String {
+            switch self {
+            case .detail: return "doc.text.image"
+            case .queue: return "tray.full"
+            case .storage: return "externaldrive"
+            }
+        }
     }
 
     enum EngineStatus: Equatable {
@@ -94,6 +103,23 @@ final class AppModel: ObservableObject {
     let history: HistoryStore
     let log: LogSink
     let queue: JobQueue
+    /// 日志检查器的控制器放在这里，菜单栏「清空日志」才能拿到它
+    let logController = LogController()
+
+    // MARK: - 窗口布局
+
+    enum WindowLayout: String {
+        case wide, medium, narrow
+    }
+
+    /// 由窗口宽度推导的布局档位，驱动工具栏降级与页面自适应
+    @Published private(set) var layout: WindowLayout = .wide
+
+    /// 自动折叠前的用户意图，用于放大后恢复
+    private var savedInspectorIntent = false
+    private var autoCollapsedInspector = false
+    private var savedColumnVisibility: NavigationSplitViewVisibility = .all
+    private var autoCollapsedSidebar = false
 
     /// 供 AppDelegate 在退出时取用
     static weak var current: AppModel?
@@ -120,7 +146,8 @@ final class AppModel: ObservableObject {
         // 把嵌套对象的变更转发给本对象，视图只需观察 AppModel
         for publisher in [settings.objectWillChange.eraseToAnyPublisher(),
                           history.objectWillChange.eraseToAnyPublisher(),
-                          queue.objectWillChange.eraseToAnyPublisher()] {
+                          queue.objectWillChange.eraseToAnyPublisher(),
+                          logController.objectWillChange.eraseToAnyPublisher()] {
             publisher
                 .sink { [weak self] _ in
                     self?.objectWillChange.send()
@@ -234,6 +261,83 @@ final class AppModel: ObservableObject {
         queue.jobs.filter { !$0.state.isTerminal }.count
     }
 
+    // MARK: - 窗口布局与面板折叠
+
+    /// 按页签分派刷新：存储页重新统计，其余重扫素材库
+    func refreshCurrentContext() {
+        switch selectedTab {
+        case .storage:
+            refreshStorage()
+        case .detail, .queue:
+            refresh()
+        }
+    }
+
+    func selectAllInCurrentContext() {
+        if selectedTab == .storage {
+            selectAllStorage(nil)
+        } else {
+            selection = Set(filteredItems.filter(\.isExtractable).map(\.id))
+        }
+    }
+
+    /// 窗口宽度变化时调用。只在跨断点时写状态，避免每帧刷新整棵视图树。
+    func noteWindowWidth(_ width: CGFloat) {
+        let next: WindowLayout
+        if width >= PKD.Breakpoint.tabIcons {
+            next = .wide
+        } else if width >= PKD.Breakpoint.tabMenu {
+            next = .medium
+        } else {
+            next = .narrow
+        }
+        if next != layout {
+            layout = next
+        }
+
+        // 检查器：窄了自动收起，宽回来按用户原意恢复
+        if width <= PKD.Breakpoint.inspectorCollapse,
+           !autoCollapsedInspector,
+           isInspectorPresented {
+            savedInspectorIntent = isInspectorPresented
+            autoCollapsedInspector = true
+            isInspectorPresented = false
+        } else if width >= PKD.Breakpoint.inspectorRestore, autoCollapsedInspector {
+            autoCollapsedInspector = false
+            isInspectorPresented = savedInspectorIntent
+        }
+
+        // 侧栏：再窄才收
+        if width <= PKD.Breakpoint.sidebarCollapse,
+           !autoCollapsedSidebar,
+           columnVisibility != .detailOnly {
+            savedColumnVisibility = columnVisibility
+            autoCollapsedSidebar = true
+            columnVisibility = .detailOnly
+        } else if width >= PKD.Breakpoint.sidebarRestore, autoCollapsedSidebar {
+            autoCollapsedSidebar = false
+            columnVisibility = savedColumnVisibility
+        }
+    }
+
+    /// 用户主动切换检查器：清掉自动折叠标记，避免放大时被「恢复」覆盖
+    func toggleInspector() {
+        autoCollapsedInspector = false
+        isInspectorPresented.toggle()
+    }
+
+    func setInspectorPresented(_ value: Bool) {
+        guard value != isInspectorPresented else { return }
+        autoCollapsedInspector = false
+        isInspectorPresented = value
+    }
+
+    func setColumnVisibility(_ value: NavigationSplitViewVisibility) {
+        guard value != columnVisibility else { return }
+        autoCollapsedSidebar = false
+        columnVisibility = value
+    }
+
     // MARK: - 素材库
 
     func refresh() {
@@ -316,7 +420,12 @@ final class AppModel: ObservableObject {
     // MARK: - 解包
 
     func requestExtraction() {
-        let targets = extractableSelection
+        requestExtraction(for: extractableSelection)
+    }
+
+    /// 指定目标解包（详情页底栏用它解包当前单个，不必先改选区）
+    func requestExtraction(for items: [WallpaperItem]) {
+        let targets = items.filter(\.isExtractable)
         guard !targets.isEmpty else { return }
 
         let estimate = targets.reduce(Int64(0)) {
