@@ -9,7 +9,7 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: columnBinding) {
-            WallpaperListView()
+            NavigationSidebar()
                 .navigationSplitViewColumnWidth(
                     min: PKD.Size.sidebarMin,
                     ideal: PKD.Size.sidebarIdeal,
@@ -20,7 +20,7 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: PKD.Size.contentMin, ideal: 760)
                 .background(PKD.Palette.canvas)
                 .inspector(isPresented: inspectorBinding) {
-                    LogInspector()
+                    InspectorPanel()
                         .inspectorColumnWidth(
                             min: PKD.Size.inspectorMin,
                             ideal: PKD.Size.inspectorIdeal,
@@ -50,6 +50,11 @@ struct RootView: View {
             // 若测内容列会形成「折叠→变宽→展开→变窄」的回环
             Task { @MainActor in model.noteWindowWidth(width) }
         }
+        // 窄窗放不下右栏时，详情改用弹出面板
+        .sheet(isPresented: $model.isDetailSheetPresented) {
+            DetailInspector()
+                .frame(width: 420, height: 620)
+        }
         .alert("确认解包", isPresented: confirmBinding) {
             Button("取消", role: .cancel) { model.pendingConfirm = nil }
             Button("开始解包") {
@@ -72,14 +77,17 @@ struct RootView: View {
 
     // MARK: - 工具栏
 
-    /// 只保留一个后缘组：HIG 要求后缘项常驻、群组不超过三个，
-    /// 且 `.primaryAction` 本身就是右对齐语义，不需要 ToolbarSpacer。
+    /// 导航已经在侧栏里，工具栏只留全局动作；
+    /// 窄窗侧栏会自动收起，那时才补一个导航菜单，避免无路可走。
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            tabSwitcher
-                .help("切换详情 / 队列 / 存储（⌘1 ⌘2 ⌘3）")
+        if model.layout == .narrow {
+            ToolbarItem(placement: .navigation) {
+                navMenu
+            }
+        }
 
+        ToolbarItemGroup(placement: .primaryAction) {
             Button {
                 model.refreshCurrentContext()
             } label: {
@@ -92,10 +100,10 @@ struct RootView: View {
             Button {
                 model.toggleInspector()
             } label: {
-                Label("日志", systemImage: "sidebar.trailing")
+                Label("检查器", systemImage: "sidebar.trailing")
             }
             .labelStyle(.iconOnly)
-            .help("显示或隐藏日志（⌥⌘L）")
+            .help("显示或隐藏检查器（⌥⌘L）")
 
             moreMenu
 
@@ -115,6 +123,28 @@ struct RootView: View {
         }
     }
 
+    private var navMenu: some View {
+        Menu {
+            ForEach(NavItem.libraryItems) { item in
+                Button {
+                    model.nav = item
+                } label: {
+                    Label(item.title, systemImage: item.icon)
+                }
+            }
+
+            Divider()
+
+            Button { model.nav = .queue } label: { Label("队列", systemImage: "tray.full") }
+            Button { model.nav = .storage } label: { Label("存储", systemImage: "externaldrive") }
+        } label: {
+            Label(model.nav.title, systemImage: model.nav.icon)
+        }
+        .labelStyle(.iconOnly)
+        .menuIndicator(.hidden)
+        .help("切换页面（当前：\(model.nav.title)）")
+    }
+
     private var extractHelp: String {
         let count = model.extractableSelection.count
         let suffix = count > 1 ? "（\(count) 项）" : ""
@@ -123,46 +153,11 @@ struct RootView: View {
             : "解包所选壁纸\(suffix)（⌘↩）"
     }
 
-    /// 视图切换：宽窗口用文字分段，中等用图标分段，窄窗口退化为菜单
-    @ViewBuilder
-    private var tabSwitcher: some View {
-        switch model.layout {
-        case .wide:
-            Picker("视图", selection: $model.selectedTab) {
-                ForEach(AppModel.Tab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-
-        case .medium:
-            Picker("视图", selection: $model.selectedTab) {
-                ForEach(AppModel.Tab.allCases) { tab in
-                    Image(systemName: tab.icon).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-
-        case .narrow:
-            Picker("视图", selection: $model.selectedTab) {
-                ForEach(AppModel.Tab.allCases) { tab in
-                    Label(tab.title, systemImage: tab.icon).tag(tab)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-        }
-    }
-
-    /// 页面级命令合并进一个「更多」菜单，随页签变化
+    /// 页面级命令合并进一个「更多」菜单，随导航位置变化
     private var moreMenu: some View {
         Menu {
-            switch model.selectedTab {
-            case .detail:
+            switch model.nav {
+            case .library:
                 Button {
                     if let item = model.focusedItem {
                         model.revealInFinder(item.pkgURL ?? item.folderURL)
@@ -197,8 +192,7 @@ struct RootView: View {
                 .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
 
             case .storage:
-                // 全选 / 移到废纸篓已改为存储页页头上的常驻按钮，
-                // 这里不再重复提供同名命令。
+                // 全选 / 移到废纸篓是存储页页头上的常驻按钮，这里不重复
                 EmptyView()
             }
 
@@ -284,31 +278,21 @@ private struct ContentColumn: View {
         VStack(spacing: 0) {
             notice
 
-            // 不做 .id() + transition：切页时整棵子树重建会明显卡顿，
-            // 直接交换内容更快，也避免与列表/滚动状态互相干扰。
             Group {
-                switch model.selectedTab {
-                case .detail:
-                    WallpaperDetailView()
+                switch model.nav {
+                case .library:
+                    WallpaperGridView()
                 case .queue:
                     JobQueueView()
                 case .storage:
                     StorageView()
                 }
             }
-            // 不再用 .topLeading：详情页空状态是弹性视图，居左会让它贴在左上角。
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // 任务胶囊作为页面底部的安全区插入：为它让出位置，
-            // 于是它永远浮在内容之上、底栏之上，不会盖住任何按钮。
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                JobHUD()
-            }
-
-            // 底栏提到内容列里：这样胶囊、底栏、页面三者的上下顺序是确定的，
-            // 切换页签时底栏也不会跟着详情页一起消失再重建。
-            if model.selectedTab == .detail, let item = model.focusedItem {
-                DetailActionBar(item: item)
-            }
+        }
+        // 任务条占据底部安全区：为它让位，绝不盖住页面内容
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            TaskBar()
         }
     }
 

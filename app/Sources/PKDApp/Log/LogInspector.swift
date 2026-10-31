@@ -3,7 +3,7 @@ import AppKit
 import Combine
 import PKDKit
 
-/// 日志检查器：由 NavigationSplitView 的 `.inspector` 承载，可折叠。
+/// 日志正文：标题与「清空」按钮由 `InspectorPanel` 统一提供，这里只管内容。
 struct LogInspector: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var accessibility: AccessibilitySettings
@@ -14,49 +14,23 @@ struct LogInspector: View {
     private let ticker = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            LogTextView(controller: controller, opaque: accessibility.reduceTransparency)
-                .overlay {
-                    if !controller.hasContent {
-                        ContentUnavailableView {
-                            Label("暂无日志", systemImage: "text.alignleft")
-                        } description: {
-                            Text("解包时这里会实时输出引擎日志")
-                        }
-                        .allowsHitTesting(false)
+        LogTextView(controller: controller, opaque: accessibility.reduceTransparency)
+            .overlay {
+                if !controller.hasContent {
+                    ContentUnavailableView {
+                        Label("暂无日志", systemImage: "text.alignleft")
+                    } description: {
+                        Text("解包时这里会实时输出引擎日志")
                     }
+                    .allowsHitTesting(false)
                 }
-        }
-        .onReceive(ticker) { _ in
-            let lines = model.log.drain()
-            if !lines.isEmpty {
-                controller.append(lines)
             }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: PKD.Space.xs) {
-            Text("日志")
-                .font(.headline)
-
-            Spacer()
-
-            Button {
-                controller.clear()
-            } label: {
-                Label("清空", systemImage: "trash")
+            .onReceive(ticker) { _ in
+                let lines = model.log.drain()
+                if !lines.isEmpty {
+                    controller.append(lines)
+                }
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .help("清空日志显示")
-        }
-        // 与 NSTextView 的 textContainerInset(8) 对齐，
-        // 否则「日志」标题会比下面的日志正文右移 4pt。
-        .padding(.horizontal, 8)
-        .padding(.vertical, PKD.Space.xs)
     }
 }
 

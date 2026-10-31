@@ -13,7 +13,7 @@ struct JobQueueView: View {
                 ContentUnavailableView {
                     Label("队列为空", systemImage: "tray")
                 } description: {
-                    Text("在左侧选择壁纸，然后按 ⌘↩ 或点击工具栏的解包按钮")
+                    Text("在主区选中壁纸，然后按 ⌘↩ 或点工具栏的解包按钮")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

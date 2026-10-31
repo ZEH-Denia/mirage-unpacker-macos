@@ -6,29 +6,10 @@ import PKDKit
 
 @MainActor
 final class AppModel: ObservableObject {
-    enum Tab: Hashable, CaseIterable, Identifiable {
-        case detail
-        case queue
-        case storage
-
-        var id: Self { self }
-
-        var title: String {
-            switch self {
-            case .detail: return "详情"
-            case .queue: return "队列"
-            case .storage: return "存储"
-            }
-        }
-
-        /// 窄窗口下分段控件降级用的符号
-        var icon: String {
-            switch self {
-            case .detail: return "doc.text.image"
-            case .queue: return "tray.full"
-            case .storage: return "externaldrive"
-            }
-        }
+    /// 检查器的两个页面：详情与日志共用一个右栏
+    enum InspectorTab: String, Hashable {
+        case detail, logs
+        var title: String { self == .detail ? "详情" : "日志" }
     }
 
     enum EngineStatus: Equatable {
@@ -66,25 +47,26 @@ final class AppModel: ObservableObject {
     // MARK: - 状态
 
     @Published var items: [WallpaperItem] = []
-    @Published var selection: Set<String> = [] {
+    @Published var selection: Set<String> = []
+    @Published var searchText: String = ""
+    /// 当前导航位置。筛选档位本身就是导航的一档，不再与页签分离。
+    @Published var nav: NavItem = .library(.all) {
         didSet {
-            // 解包后界面停在「队列」，此时点另一个壁纸是想看它的详情，
-            // 自动切回详情页，省掉手动点一次
-            guard selection.count == 1, oldValue != selection else { return }
-            if selectedTab == .queue {
-                selectedTab = .detail
-            }
+            guard nav != oldValue else { return }
+            // 离开素材库时清掉多选：否则工具栏的「解包所选」会在队列页仍然亮着
+            if !nav.isLibrary { selection = [] }
         }
     }
-    @Published var searchText: String = ""
-    @Published var filter: LibraryFilter = .all
-    /// 侧栏筛选弹出面板是否展开
-    @Published var isFilterMenuPresented: Bool = false
+    /// 检查器当前页
+    @Published var inspectorTab: InspectorTab = .detail
+    /// ⇧ 区间选择的锚点
+    @Published var selectionAnchor: String?
+    /// 窄窗放不下检查器时，用这个弹详情
+    @Published var isDetailSheetPresented = false
     @Published var infoCache: [String: PkgInfo] = [:]
     @Published var loadingInfo: Set<String> = []
     @Published var engineStatus: EngineStatus = .unknown
     @Published var isScanning = false
-    @Published var selectedTab: Tab = .detail
     /// 侧栏可见性（@State 在本工具链不可用，状态一律放这里）
     @Published var columnVisibility: NavigationSplitViewVisibility = .all
     /// 日志检查器是否展开
@@ -116,6 +98,9 @@ final class AppModel: ObservableObject {
 
     /// 由窗口宽度推导的布局档位，驱动工具栏降级与页面自适应
     @Published private(set) var layout: WindowLayout = .wide
+
+    /// 窗口窄到放不下右侧检查器：此时详情改用弹出面板
+    @Published private(set) var compactDetailMode = false
 
     /// 自动折叠前的用户意图，用于放大后恢复
     private var savedInspectorIntent = false
@@ -161,15 +146,24 @@ final class AppModel: ObservableObject {
         refresh()
         runSmokeExtractionIfRequested()
 
-        // 冒烟钩子：PKD_SMOKE_TAB=storage 时直接打开存储页（用于截图/验证）
+        // 冒烟钩子：pkd.debug.tab=storage/queue/extracted/... 时直接落到对应导航
         let debugDefaults = UserDefaults.standard
-        if ProcessInfo.processInfo.environment["PKD_SMOKE_TAB"] == "storage"
-            || debugDefaults.string(forKey: "pkd.debug.tab") == "storage" {
-            selectedTab = .storage
+        let debugTab = ProcessInfo.processInfo.environment["PKD_SMOKE_TAB"]
+            ?? debugDefaults.string(forKey: "pkd.debug.tab")
+        switch debugTab {
+        case "storage":
+            nav = .storage
             refreshStorage()
-        }
-        if debugDefaults.string(forKey: "pkd.debug.tab") == "queue" {
-            selectedTab = .queue
+        case "queue":
+            nav = .queue
+        case "extracted":
+            nav = .library(.extracted)
+        case "notExtracted":
+            nav = .library(.notExtracted)
+        case "extractable":
+            nav = .library(.extractable)
+        default:
+            break
         }
         // 冒烟钩子：pkd.debug.fakeLogs=1 时灌入 300 行日志，用于检查滚动条外观
         if debugDefaults.bool(forKey: "pkd.debug.fakeLogs") {
@@ -178,26 +172,38 @@ final class AppModel: ObservableObject {
             }
         }
 
-        // 冒烟钩子：pkd.debug.filterMenu=1 时延时展开筛选面板，用于截图
-        if debugDefaults.bool(forKey: "pkd.debug.filterMenu") {
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                self?.isFilterMenuPresented = true
-            }
-        }
-
-        // 冒烟钩子：pkd.debug.stress=1 时每 0.8s 轮换页签，用于验证切换是否卡顿
+        // 冒烟钩子：pkd.debug.stress=1 时每 0.8s 轮换导航，用于验证切换是否卡顿
         if debugDefaults.bool(forKey: "pkd.debug.stress") {
             Task { [weak self] in
                 var index = 0
-                let tabs: [Tab] = [.detail, .queue, .storage]
+                let destinations: [NavItem] = [.library(.all), .library(.extractable), .queue, .storage]
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 800_000_000)
                     guard let self else { return }
-                    self.selectedTab = tabs[index % tabs.count]
+                    self.nav = destinations[index % destinations.count]
                     index += 1
                 }
             }
+        }
+
+        // 冒烟钩子：pkd.debug.sheet=1 时选中首项并弹出详情面板（窄窗兜底验证）
+        if debugDefaults.bool(forKey: "pkd.debug.sheet") {
+            Task { [weak self] in
+                for _ in 0..<30 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard let self else { return }
+                    if let item = self.items.first(where: { $0.isExtractable }) {
+                        self.selection = [item.id]
+                        self.isDetailSheetPresented = true
+                        return
+                    }
+                }
+            }
+        }
+
+        // 冒烟钩子：pkd.debug.inspectorTab=logs 时检查器直接停在日志页
+        if debugDefaults.string(forKey: "pkd.debug.inspectorTab") == "logs" {
+            inspectorTab = .logs
         }
 
         // 冒烟钩子：PKD_SMOKE_INSPECTOR=1 展开日志检查器；PKD_SMOKE_SELECT=1 选中首项
@@ -255,6 +261,15 @@ final class AppModel: ObservableObject {
 
     // MARK: - 派生数据
 
+    /// 兼容旧调用点的读写入口：筛选就是 `.library(filter)` 这一档导航
+    var filter: LibraryFilter {
+        get {
+            if case .library(let filter) = nav { return filter }
+            return .all
+        }
+        set { nav = .library(newValue) }
+    }
+
     var filteredItems: [WallpaperItem] {
         items.filter { item in
             if !searchText.isEmpty {
@@ -298,20 +313,40 @@ final class AppModel: ObservableObject {
         queue.jobs.filter { !$0.state.isTerminal }.count
     }
 
+    var extractedCount: Int {
+        items.filter { history.entry(for: $0.id) != nil }.count
+    }
+
+    var notExtractedCount: Int {
+        max(0, items.count - extractedCount)
+    }
+
+    /// 侧栏某个导航项右侧的计数；队列用未完成任务数
+    func badgeCount(for item: NavItem) -> Int? {
+        switch item {
+        case .library(.all): return items.count
+        case .library(.extractable): return extractableCount
+        case .library(.notExtracted): return notExtractedCount
+        case .library(.extracted): return extractedCount
+        case .queue: return queueBadgeCount > 0 ? queueBadgeCount : nil
+        case .storage: return nil
+        }
+    }
+
     // MARK: - 窗口布局与面板折叠
 
-    /// 按页签分派刷新：存储页重新统计，其余重扫素材库
+    /// 按导航位置分派刷新：存储页重新统计，其余重扫素材库
     func refreshCurrentContext() {
-        switch selectedTab {
+        switch nav {
         case .storage:
             refreshStorage()
-        case .detail, .queue:
+        case .queue, .library:
             refresh()
         }
     }
 
     func selectAllInCurrentContext() {
-        if selectedTab == .storage {
+        if case .storage = nav {
             selectAllStorage(nil)
         } else {
             selection = Set(filteredItems.filter(\.isExtractable).map(\.id))
@@ -330,6 +365,12 @@ final class AppModel: ObservableObject {
         }
         if next != layout {
             layout = next
+        }
+
+        // 窄窗放不下三栏：详情改用弹出面板（只在跨断点时写状态，避免拖动时每帧刷新）
+        let compact = width <= PKD.Breakpoint.inspectorCollapse
+        if compact != compactDetailMode {
+            compactDetailMode = compact
         }
 
         // 检查器：窄了自动收起，宽回来按用户原意恢复

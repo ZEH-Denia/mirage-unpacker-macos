@@ -12,22 +12,27 @@ extension View {
             )
     }
 
-    /// 全应用唯一一处自绘玻璃：悬浮在内容之上的任务胶囊（对应 Music 的迷你播放条）。
+    /// 全应用唯一一处自绘玻璃：悬浮在内容之上的任务条（对应 Music 的迷你播放条）。
     ///
     /// HIG 只允许 Liquid Glass 出现在控制层，且「仅用于最重要的功能元素」；
     /// 侧栏、工具栏、检查器的玻璃由系统绘制，不在这里处理。
     @ViewBuilder
-    func pkdFloatingCapsule(mode: AppearanceSettings.GlassMode, reduceTransparency: Bool) -> some View {
+    func pkdFloatingBar(
+        radius: CGFloat = PKD.Radius.bar,
+        mode: AppearanceSettings.GlassMode,
+        reduceTransparency: Bool
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         if reduceTransparency || mode == .off {
             self
-                .background(PKD.Palette.card, in: Capsule())
-                .overlay(Capsule().strokeBorder(PKD.Palette.hairline, lineWidth: 1))
+                .background(PKD.Palette.card, in: shape)
+                .overlay(shape.strokeBorder(PKD.Palette.hairline, lineWidth: 1))
         } else if mode == .native, #available(macOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: .capsule)
+            self.glassEffect(.regular.interactive(), in: .rect(cornerRadius: radius))
         } else {
             self
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(PKD.Palette.hairline, lineWidth: 1))
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.strokeBorder(PKD.Palette.hairline, lineWidth: 1))
         }
     }
 }

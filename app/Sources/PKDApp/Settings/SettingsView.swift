@@ -188,7 +188,7 @@ private struct SettingsForm: View {
             }
             .pickerStyle(.menu)
 
-            Toggle("在侧栏显示缩略图", isOn: $appearance.showThumbnails)
+            Toggle("在网格显示预览图", isOn: $appearance.showThumbnails)
 
             HStack {
                 Spacer()

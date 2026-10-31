@@ -86,24 +86,25 @@ struct PKDApp: App {
             }
 
             CommandMenu("视图") {
-                Button("详情") { model.selectedTab = .detail }
+                Button("全部壁纸") { model.nav = .library(.all) }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("队列") { model.selectedTab = .queue }
+                Button("可解包") { model.nav = .library(.extractable) }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("存储") { model.selectedTab = .storage }
+                Button("未解包") { model.nav = .library(.notExtracted) }
                     .keyboardShortcut("3", modifiers: .command)
+                Button("已解包") { model.nav = .library(.extracted) }
+                    .keyboardShortcut("4", modifiers: .command)
 
                 Divider()
 
-                Menu("筛选") {
-                    ForEach(AppModel.LibraryFilter.allCases) { filter in
-                        Button(filter.label) { model.filter = filter }
-                    }
-                }
+                Button("队列") { model.nav = .queue }
+                    .keyboardShortcut("5", modifiers: .command)
+                Button("存储") { model.nav = .storage }
+                    .keyboardShortcut("6", modifiers: .command)
 
                 Divider()
 
-                Button(model.isInspectorPresented ? "隐藏日志" : "显示日志") {
+                Button(model.isInspectorPresented ? "隐藏检查器" : "显示检查器") {
                     model.toggleInspector()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .option])

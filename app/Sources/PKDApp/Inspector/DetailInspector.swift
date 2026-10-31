@@ -1,56 +1,49 @@
 import SwiftUI
 import PKDKit
 
-struct WallpaperDetailView: View {
+/// 检查器里的详情：为 260–340pt 的窄栏改写。
+///
+/// 与原来的整页详情相比：预览改成 16:9 自适应高度（不再写死 300）、
+/// 元数据一律纵向排列、包内条目默认折叠，保证一屏能看到关键信息。
+struct DetailInspector: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
 
     var body: some View {
         if let item = model.focusedItem {
-            detail(for: item)
+            content(item)
         } else {
             ContentUnavailableView {
-                Label("未选择壁纸", systemImage: "sidebar.left")
+                Label("未选择壁纸", systemImage: "square.grid.2x2")
             } description: {
-                Text("在左侧选择单个壁纸查看详情；按住 ⌘ 或 ⇧ 可多选后批量解包")
+                Text("在主区网格里点一张壁纸查看详情；按住 ⌘ 或 ⇧ 可多选")
             }
-            // 必须显式吃满可用空间，否则空状态会缩成自身尺寸贴在左上角
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private func detail(for item: WallpaperItem) -> some View {
+    private func content(_ item: WallpaperItem) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: PKD.Space.l) {
-                previewSection(item)
-                headerSection(item)
+            VStack(alignment: .leading, spacing: PKD.Space.m) {
+                preview(item)
+                header(item)
+                actions(item)
                 Divider()
-                metadataSection(item)
+                metadata(item)
                 Divider()
-                entrySection(item)
+                entries(item)
             }
-            .padding(.horizontal, PKD.Layout.pageInset)
-            .padding(.vertical, PKD.Space.l)
+            .padding(PKD.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollIndicators(.hidden)
         .task(id: item.id) {
             model.loadInfo(for: item)
         }
     }
 
-    /// 预览区高度随窗口档位变化，替代原先写死的 240
-    private var heroHeight: CGFloat {
-        switch model.layout {
-        case .wide: return PKD.Size.heroWide
-        case .medium: return PKD.Size.heroMedium
-        case .narrow: return PKD.Size.heroNarrow
-        }
-    }
-
     // MARK: - 预览
 
-    private func previewSection(_ item: WallpaperItem) -> some View {
+    private func preview(_ item: WallpaperItem) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous)
                 .fill(.quaternary.opacity(0.25))
@@ -59,29 +52,28 @@ struct WallpaperDetailView: View {
                 AsyncPreview(url: url)
             } else {
                 VStack(spacing: PKD.Space.xxs) {
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
+                    Image(systemName: "photo").font(.title2)
                     Text("无预览图").font(.caption)
                 }
                 .foregroundStyle(.tertiary)
             }
         }
-        .frame(height: heroHeight)
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous))
     }
 
     // MARK: - 标题
 
-    private func headerSection(_ item: WallpaperItem) -> some View {
-        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+    private func header(_ item: WallpaperItem) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             Text(item.title)
-                .font(appearance.titleFont.weight(.bold))
+                .font(.title3.weight(.semibold))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(metaLine(item))
-                .font(.callout)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -94,30 +86,66 @@ struct WallpaperDetailView: View {
         return parts.joined(separator: " · ")
     }
 
+    // MARK: - 操作
+
+    private func actions(_ item: WallpaperItem) -> some View {
+        VStack(spacing: PKD.Space.xs) {
+            Button {
+                model.requestExtraction(for: [item])
+            } label: {
+                Label(
+                    model.settings.exportImagesOnly ? "导出此壁纸图片" : "解包此壁纸",
+                    systemImage: model.settings.exportImagesOnly
+                        ? "photo.on.rectangle.angled"
+                        : "shippingbox.and.arrow.backward"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!item.isExtractable)
+
+            HStack(spacing: PKD.Space.xs) {
+                if model.history.entry(for: item.id) != nil {
+                    Button {
+                        model.openOutput(for: item)
+                    } label: {
+                        Label("打开输出", systemImage: "folder")
+                    }
+                }
+
+                Button {
+                    model.revealInFinder(item.pkgURL ?? item.folderURL)
+                } label: {
+                    Label("在 Finder 中显示", systemImage: "magnifyingglass")
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
     // MARK: - 元数据
 
-    private func metadataSection(_ item: WallpaperItem) -> some View {
-        let vertical = model.layout == .narrow
-
-        return VStack(alignment: .leading, spacing: PKD.Space.xs) {
-            KeyValueRow("Workshop ID", vertical: vertical) {
+    private func metadata(_ item: WallpaperItem) -> some View {
+        VStack(alignment: .leading, spacing: PKD.Space.xs) {
+            KeyValueRow("Workshop ID", vertical: true) {
                 Text(item.id)
-                    .font(.callout.monospaced())
+                    .font(.caption.monospaced())
                     .textSelection(.enabled)
             }
 
-            KeyValueRow("输出目录", vertical: vertical) {
+            KeyValueRow("输出目录", vertical: true) {
                 Text(OutputLayout.outputDirectory(for: item, root: model.settings.outputRoot).path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
 
             if model.xrayFlags[item.id] == true {
-                KeyValueRow("X-Ray", vertical: vertical) {
+                KeyValueRow("X-Ray", vertical: true) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("含 X-Ray 效果，解包时自动分离正常层与 X-Ray 层")
+                        Text("解包时自动分离正常层与 X-Ray 层")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -126,13 +154,11 @@ struct WallpaperDetailView: View {
                                 Text("正常层：\(clean)")
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)
-                                    .textSelection(.enabled)
                             }
                             if let layer = entry.xrayLayerFile {
                                 Text("X-Ray 层：\(layer)")
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)
-                                    .textSelection(.enabled)
                             }
                         }
                     }
@@ -140,7 +166,7 @@ struct WallpaperDetailView: View {
             }
 
             if let issue = item.issue {
-                KeyValueRow("提示", vertical: vertical) {
+                KeyValueRow("提示", vertical: true) {
                     Text(issueText(issue))
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -159,10 +185,10 @@ struct WallpaperDetailView: View {
         }
     }
 
-    // MARK: - 条目
+    // MARK: - 包内条目
 
     @ViewBuilder
-    private func entrySection(_ item: WallpaperItem) -> some View {
+    private func entries(_ item: WallpaperItem) -> some View {
         VStack(alignment: .leading, spacing: PKD.Space.xs) {
             HStack(alignment: .firstTextBaseline) {
                 Text("包内条目").font(.headline)
@@ -192,8 +218,8 @@ final class PreviewState: ObservableObject {
     @Published var image: NSImage?
 }
 
-/// 大图预览也走降采样，避免把 8K 原图读进内存。
-private struct AsyncPreview: View {
+/// 预览图也走降采样，避免把 8K 原图读进内存。
+struct AsyncPreview: View {
     let url: URL
     @StateObject private var state = PreviewState()
 

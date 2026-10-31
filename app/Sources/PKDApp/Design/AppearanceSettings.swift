@@ -183,6 +183,38 @@ final class AppearanceSettings: ObservableObject {
         }
     }
 
+    /// 网格卡片最小宽度：密度直接决定一屏能放几列
+    var gridMin: CGFloat {
+        switch density {
+        case .compact: return 160
+        case .standard: return PKD.Size.gridMin
+        case .comfortable: return 230
+        }
+    }
+
+    /// 网格卡片最大宽度，避免拉宽后卡片变得过大
+    var gridMax: CGFloat {
+        gridMin + 80
+    }
+
+    /// 网格间距
+    var gridSpacing: CGFloat {
+        switch density {
+        case .compact: return 10
+        case .standard: return 16
+        case .comfortable: return 22
+        }
+    }
+
+    /// 卡片标题字号：跟随「字号」设置
+    var cardTitleFont: Font {
+        switch fontScale {
+        case .small: return .footnote
+        case .standard: return .callout
+        case .large: return .body
+        }
+    }
+
     /// 卡片内边距
     var cardPadding: CGFloat {
         switch density {
@@ -193,11 +225,14 @@ final class AppearanceSettings: ObservableObject {
     }
 
     /// 页面主标题（每屏唯一一处）
+    ///
+    /// 原来用 largeTitle（34pt），比 Apple Music 的页头大出一圈；
+    /// 改成 title2（22pt），层级还在但不再抢内容。
     var titleFont: Font {
         switch fontScale {
-        case .small: return .title
-        case .standard: return .largeTitle
-        case .large: return .largeTitle
+        case .small: return .title3
+        case .standard: return .title2
+        case .large: return .title
         }
     }
 

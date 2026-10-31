@@ -13,10 +13,12 @@ import AppKit
 /// | `.callout.weight(.medium)` 行标题 | 队列行              | `.body` + medium 字重         |
 /// | 等宽 11pt                       | 日志                  | 保留（11pt ≥ 10pt，合理例外）  |
 enum PKD {
-    /// 圆角只有两档：控件 6、卡片 10。替代原先 4/7/8/10/14 并存。
+    /// 圆角只有两档：控件 6、卡片 12。替代原先 4/7/8/10/14 并存。
     enum Radius {
         static let control: CGFloat = 6
-        static let card: CGFloat = 10
+        static let card: CGFloat = 12
+        /// 底部悬浮条
+        static let bar: CGFloat = 14
     }
 
     /// 4pt 基准的间距阶梯。
@@ -39,12 +41,17 @@ enum PKD {
 
     enum Size {
         static let thumb: CGFloat = 40
+        /// 网格卡片最小 / 最大宽度（配合 LazyVGrid 的 adaptive 列）
+        static let gridMin: CGFloat = 190
+        static let gridMax: CGFloat = 260
+        /// 页头里搜索框的最大宽度
+        static let searchWidth: CGFloat = 420
         static let heroWide: CGFloat = 300
         static let heroMedium: CGFloat = 240
         static let heroNarrow: CGFloat = 180
-        static let sidebarMin: CGFloat = 240
-        static let sidebarIdeal: CGFloat = 280
-        static let sidebarMax: CGFloat = 360
+        static let sidebarMin: CGFloat = 200
+        static let sidebarIdeal: CGFloat = 220
+        static let sidebarMax: CGFloat = 260
         static let contentMin: CGFloat = 520
         static let inspectorMin: CGFloat = 260
         static let inspectorIdeal: CGFloat = 340
