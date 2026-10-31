@@ -146,24 +146,49 @@ struct WindowScrollStyler: NSViewRepresentable {
 ///
 /// 左右内边距必须用 `PKD.Layout.pageInset`，与列表自带的段内边距一致，
 /// 否则页头会比下面的段标题、行图标各缩进 8pt，出现参差的左边缘。
-struct PageHeader: View {
+struct PageHeader<Accessory: View>: View {
     let title: String
     let subtitle: String
     let titleFont: Font
+    let accessory: Accessory
+
+    init(
+        title: String,
+        subtitle: String,
+        titleFont: Font,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.titleFont = titleFont
+        self.accessory = accessory()
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
-            Text(title)
-                .font(titleFont.weight(.bold))
+        HStack(alignment: .center, spacing: PKD.Space.s) {
+            VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+                Text(title)
+                    .font(titleFont.weight(.bold))
 
-            Text(subtitle)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: PKD.Space.s)
+
+            accessory
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, PKD.Layout.pageInset)
         .padding(.top, PKD.Space.l)
         .padding(.bottom, PKD.Space.s)
+    }
+}
+
+extension PageHeader where Accessory == EmptyView {
+    init(title: String, subtitle: String, titleFont: Font) {
+        self.init(title: title, subtitle: subtitle, titleFont: titleFont) { EmptyView() }
     }
 }
 

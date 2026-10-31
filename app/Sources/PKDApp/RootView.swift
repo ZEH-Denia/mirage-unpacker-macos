@@ -197,19 +197,9 @@ struct RootView: View {
                 .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
 
             case .storage:
-                Button {
-                    model.selectAllStorage(nil)
-                } label: {
-                    Label("全选", systemImage: "checklist")
-                }
-                .disabled(model.storageItems.isEmpty)
-
-                Button(role: .destructive) {
-                    model.requestTrashSelection()
-                } label: {
-                    Label("移到废纸篓", systemImage: "trash")
-                }
-                .disabled(model.storageSelection.isEmpty)
+                // 全选 / 移到废纸篓已改为存储页页头上的常驻按钮，
+                // 这里不再重复提供同名命令。
+                EmptyView()
             }
 
             Divider()

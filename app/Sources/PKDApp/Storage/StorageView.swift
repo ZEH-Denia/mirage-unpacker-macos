@@ -56,7 +56,29 @@ struct StorageView: View {
     // MARK: - 顶部
 
     private var header: some View {
-        PageHeader(title: "存储", subtitle: summaryLine, titleFont: appearance.titleFont)
+        PageHeader(title: "存储", subtitle: summaryLine, titleFont: appearance.titleFont) {
+            HStack(spacing: PKD.Space.xs) {
+                Button(allSelected ? "取消全选" : "全选") {
+                    if allSelected {
+                        model.storageSelection = []
+                    } else {
+                        model.selectAllStorage(nil)
+                    }
+                }
+                .disabled(model.storageItems.isEmpty)
+
+                Button(role: .destructive) {
+                    model.requestTrashSelection()
+                } label: {
+                    Label("移到废纸篓", systemImage: "trash")
+                }
+                .disabled(model.storageSelection.isEmpty)
+            }
+        }
+    }
+
+    private var allSelected: Bool {
+        !model.storageItems.isEmpty && model.storageSelection.count == model.storageItems.count
     }
 
     private var summaryLine: String {
@@ -71,42 +93,61 @@ struct StorageView: View {
 
     // MARK: - 列表
 
+    /// 分段必须**无条件**直接挂在 List 下。
+    ///
+    /// 踩过的坑：`ForEach(kinds) { Section { … } }` 和 `if !items.isEmpty { Section { … } }`
+    /// 这两种写法都会让 `List(selection:)` 认不出段内行的 tag——`storageSelection`
+    /// 明明有值，行却不高亮，点行也选不中，「全选」于是看起来毫无反应。
+    /// 改成四段常量存在、只让表头按需显示后，选择恢复正常（实测高亮与计数都对）。
     private var list: some View {
         List(selection: $model.storageSelection) {
-            ForEach(StorageItem.Kind.allCases, id: \.self) { kind in
-                let items = model.storageItems(of: kind)
-                if !items.isEmpty {
-                    Section {
-                        ForEach(items) { item in
-                            row(item)
-                                .tag(item.id)
-                                .contextMenu {
-                                    Button("在 Finder 中显示") {
-                                        model.revealInFinder(item.url)
-                                    }
-                                    Button("移到废纸篓", role: .destructive) {
-                                        model.storageSelection = [item.id]
-                                        model.requestTrashSelection()
-                                    }
-                                }
-                        }
-                    } header: {
-                        HStack {
-                            Text(kind.sectionTitle)
-                            Spacer()
-                            Text(ByteCountFormatter.string(
-                                fromByteCount: items.reduce(0) { $0 + $1.sizeBytes },
-                                countStyle: .file
-                            ))
-                            .foregroundStyle(.secondary)
-                        }
-                        .font(.caption)
-                    }
-                }
-            }
+            section(.extracted)
+            section(.images)
+            section(.temporary)
+            section(.orphan)
         }
         .listStyle(.inset)
         .scrollIndicators(.hidden)
+    }
+
+    private func items(_ kind: StorageItem.Kind) -> [StorageItem] {
+        model.storageItems(of: kind)
+    }
+
+    private func section(_ kind: StorageItem.Kind) -> some View {
+        let items = items(kind)
+        return Section {
+            ForEach(items) { item in
+                row(item)
+                    .tag(item.id)
+                    .contextMenu {
+                        Button("在 Finder 中显示") {
+                            model.revealInFinder(item.url)
+                        }
+                        Button("移到废纸篓", role: .destructive) {
+                            model.storageSelection = [item.id]
+                            model.requestTrashSelection()
+                        }
+                    }
+            }
+        } header: {
+            if !items.isEmpty {
+                sectionHeader(kind)
+            }
+        }
+    }
+
+    private func sectionHeader(_ kind: StorageItem.Kind) -> some View {
+        HStack {
+            Text(kind.sectionTitle)
+            Spacer()
+            Text(ByteCountFormatter.string(
+                fromByteCount: items(kind).reduce(0) { $0 + $1.sizeBytes },
+                countStyle: .file
+            ))
+            .foregroundStyle(.secondary)
+        }
+        .font(.caption)
     }
 
     private func row(_ item: StorageItem) -> some View {
@@ -135,6 +176,8 @@ struct StorageView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, PKD.Space.xxs)
+        // 整行可点：不然只有文字那一小块能选中，右侧空白点了没反应
+        .contentShape(Rectangle())
     }
 
     private func icon(for kind: StorageItem.Kind) -> String {
