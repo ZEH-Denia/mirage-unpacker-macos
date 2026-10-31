@@ -3,58 +3,72 @@ import PKDKit
 
 struct JobQueueView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var appearance: AppearanceSettings
 
     var body: some View {
-        if model.queue.jobs.isEmpty {
-            ContentUnavailableView(
-                "队列为空",
-                systemImage: "tray",
-                description: Text("在左侧选择壁纸，然后按 ⌘↩ 或点击工具栏的解包按钮")
-            )
-        } else {
-            List {
-                ForEach(model.queue.jobs) { job in
-                    JobRow(job: job)
+        VStack(alignment: .leading, spacing: 0) {
+            header
+
+            if model.queue.jobs.isEmpty {
+                ContentUnavailableView {
+                    Label("队列为空", systemImage: "tray")
+                } description: {
+                    Text("在左侧选择壁纸，然后按 ⌘↩ 或点击工具栏的解包按钮")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(model.queue.jobs) { job in
+                        JobRow(job: job)
+                    }
+                }
+                .listStyle(.inset)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
-            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        model.queue.retryAllFailed()
+                    } label: {
+                        Label("重试失败", systemImage: "arrow.clockwise.circle")
+                    }
+                    .disabled(model.queue.failedCount == 0)
+
+                    Button {
+                        model.queue.removeFinished()
+                    } label: {
+                        Label("清除已完成", systemImage: "trash")
+                    }
+                    .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
+                }
+                .help("队列操作")
+            }
         }
     }
 
-    private var bottomBar: some View {
-        HStack(spacing: 10) {
-            if model.queue.activeCount > 0 {
-                ProgressView().controlSize(.small)
-                Text("\(model.queue.activeCount) 个进行中")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("共 \(model.queue.jobs.count) 个任务")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+    private var header: some View {
+        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+            Text("队列")
+                .font(appearance.titleFont.weight(.bold))
 
-            Spacer()
-
-            if model.queue.failedCount > 0 {
-                Button("重试失败 (\(model.queue.failedCount))") {
-                    model.queue.retryAllFailed()
-                }
-            }
-
-            Button("清除已完成") {
-                model.queue.removeFinished()
-            }
-            .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
+            Text(summary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle().fill(.white.opacity(0.08)).frame(height: 0.5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, PKD.Space.l)
+        .padding(.top, PKD.Space.l)
+        .padding(.bottom, PKD.Space.s)
+    }
+
+    private var summary: String {
+        if model.queue.activeCount > 0 {
+            return "\(model.queue.activeCount) 个进行中 · 共 \(model.queue.jobs.count) 个任务"
         }
+        return "共 \(model.queue.jobs.count) 个任务"
     }
 }
 
@@ -63,14 +77,14 @@ struct JobRow: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+            HStack(spacing: PKD.Space.xs) {
                 statusIcon
                 Text(job.item.title)
-                    .font(.callout.weight(.medium))
+                    .font(.body.weight(.medium))
                     .lineLimit(1)
                 Text(job.item.sizeText)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -88,36 +102,32 @@ struct JobRow: View {
 
             if !job.warnings.isEmpty, !job.state.isRunning {
                 Text(job.warnings.prefix(2).joined(separator: " · "))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.orange)
                     .lineLimit(2)
             }
 
             if !job.xray.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "eye.trianglebadge.exclamationmark")
-                        .font(.caption2)
-                    Text("X-Ray 已分离：\(job.xray.shortDescription ?? "")")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .font(.caption2)
-                .foregroundStyle(.orange)
+                StatusTag(
+                    symbol: "eye",
+                    text: "X-Ray 已分离：\(job.xray.shortDescription ?? "")",
+                    tint: .secondary
+                )
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
 
             if let export = job.exportedImages, !export.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "photo.stack")
-                        .font(.caption2)
-                    Text("已导出 \(export.files.count) 张：\(export.summary)")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .font(.caption2)
-                .foregroundStyle(.green)
+                StatusTag(
+                    symbol: "photo.stack",
+                    text: "已导出 \(export.files.count) 张：\(export.summary)",
+                    tint: .secondary
+                )
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: PKD.Space.xs) {
                 if job.state.isRunning {
                     Button("取消") { model.queue.cancel(job.id) }
                         .buttonStyle(.link)
@@ -139,11 +149,11 @@ struct JobRow: View {
                 Spacer()
 
                 Text(job.durationText)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, PKD.Space.xxs)
     }
 
     private var progressRow: some View {
@@ -156,20 +166,20 @@ struct JobRow: View {
                     .progressViewStyle(.linear)
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: PKD.Space.xxs) {
                 Text(job.progress.phaseText)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if let total = job.progress.entriesTotal {
                     Text("\(job.progress.entriesDone)/\(total)")
-                        .font(.caption2.monospacedDigit())
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
 
                 if let current = job.progress.currentEntry {
                     Text("· \(current)")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -179,7 +189,7 @@ struct JobRow: View {
     }
 
     private func summaryRow(_ report: ExtractReport) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: PKD.Space.xs) {
             Text("\(report.outputFileCount) 个文件")
             if report.entriesSkipped > 0 {
                 Text("跳过 \(report.entriesSkipped)")
@@ -189,7 +199,7 @@ struct JobRow: View {
                     .foregroundStyle(.orange)
             }
         }
-        .font(.caption2)
+        .font(.caption)
         .foregroundStyle(.secondary)
     }
 
@@ -220,7 +230,6 @@ struct JobRow: View {
         case .succeeded: return .green
         case .partial: return .yellow
         case .failed: return .red
-        case .cancelled: return .secondary
         default: return .secondary
         }
     }

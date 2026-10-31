@@ -3,8 +3,10 @@ import AppKit
 import Combine
 import PKDKit
 
-struct LogPanelView: View {
+/// 日志检查器：由 NavigationSplitView 的 `.inspector` 承载，可折叠。
+struct LogInspector: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var accessibility: AccessibilitySettings
     @StateObject private var controller = LogController()
 
     private let ticker = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
@@ -13,7 +15,17 @@ struct LogPanelView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            LogTextView(controller: controller)
+            LogTextView(controller: controller, opaque: accessibility.reduceTransparency)
+                .overlay {
+                    if !controller.hasContent {
+                        ContentUnavailableView {
+                            Label("暂无日志", systemImage: "text.alignleft")
+                        } description: {
+                            Text("解包时这里会实时输出引擎日志")
+                        }
+                        .allowsHitTesting(false)
+                    }
+                }
         }
         .onReceive(ticker) { _ in
             let lines = model.log.drain()
@@ -24,23 +36,23 @@ struct LogPanelView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "text.alignleft")
-                .foregroundStyle(.secondary)
-            Text("实时日志")
-                .font(.callout.weight(.medium))
+        HStack(spacing: PKD.Space.xs) {
+            Text("日志")
+                .font(.headline)
 
             Spacer()
 
             Button {
                 controller.clear()
             } label: {
-                Image(systemName: "trash")
+                Label("清空", systemImage: "trash")
             }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
             .help("清空日志显示")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, PKD.Space.s)
+        .padding(.vertical, PKD.Space.xs)
     }
 }
 
@@ -49,13 +61,45 @@ struct LogPanelView: View {
 final class LogController: ObservableObject {
     weak var textView: NSTextView?
     private var lineCount = 0
+    /// 检查器折叠时 textView 为 nil，此时先缓存；展开后回放，避免日志出现空洞
+    private var backlog: [LogSink.Line] = []
+
+    /// 是否已有内容（用于空状态提示）
+    @Published private(set) var hasContent = false
 
     private static let defaultAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
         .foregroundColor: NSColor.labelColor,
     ]
 
+    func attach(_ textView: NSTextView) {
+        self.textView = textView
+        guard !backlog.isEmpty else { return }
+        let pending = backlog
+        backlog.removeAll()
+        write(pending)
+    }
+
     func append(_ lines: [LogSink.Line]) {
+        guard textView?.textStorage != nil else {
+            backlog.append(contentsOf: lines)
+            if backlog.count > 6000 {
+                backlog.removeFirst(backlog.count - 6000)
+            }
+            hasContent = true
+            return
+        }
+        write(lines)
+    }
+
+    func clear() {
+        textView?.textStorage?.setAttributedString(NSAttributedString())
+        backlog.removeAll()
+        lineCount = 0
+        hasContent = false
+    }
+
+    private func write(_ lines: [LogSink.Line]) {
         guard let textView, let storage = textView.textStorage else { return }
 
         let chunk = NSMutableAttributedString()
@@ -67,11 +111,7 @@ final class LogController: ObservableObject {
         storage.append(chunk)
         trimIfNeeded()
         textView.scrollToEndOfDocument(nil)
-    }
-
-    func clear() {
-        textView?.textStorage?.setAttributedString(NSAttributedString())
-        lineCount = 0
+        hasContent = true
     }
 
     private func attributes(for kind: LogSink.Kind) -> [NSAttributedString.Key: Any] {
@@ -112,6 +152,8 @@ final class LogController: ObservableObject {
 
 struct LogTextView: NSViewRepresentable {
     let controller: LogController
+    /// 降低透明度开启时用不透明底色，否则交给系统材质
+    let opaque: Bool
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -120,11 +162,10 @@ struct LogTextView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
-        // 透明背景，让底下的玻璃透上来
-        textView.drawsBackground = false
-        textView.backgroundColor = .clear
-        scrollView.drawsBackground = false
-        scrollView.backgroundColor = .clear
+        textView.drawsBackground = opaque
+        textView.backgroundColor = opaque ? .textBackgroundColor : .clear
+        scrollView.drawsBackground = opaque
+        scrollView.backgroundColor = opaque ? .textBackgroundColor : .clear
         textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -139,13 +180,20 @@ struct LogTextView: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
-        controller.textView = textView
+        controller.attach(textView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        if let textView = scrollView.documentView as? NSTextView, controller.textView !== textView {
-            controller.textView = textView
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+
+        textView.drawsBackground = opaque
+        textView.backgroundColor = opaque ? .textBackgroundColor : .clear
+        scrollView.drawsBackground = opaque
+        scrollView.backgroundColor = opaque ? .textBackgroundColor : .clear
+
+        if controller.textView !== textView {
+            controller.attach(textView)
         }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import SwiftUI
 import PKDKit
 
 @MainActor
@@ -73,6 +74,10 @@ final class AppModel: ObservableObject {
     @Published var engineStatus: EngineStatus = .unknown
     @Published var isScanning = false
     @Published var selectedTab: Tab = .detail
+    /// 侧栏可见性（@State 在本工具链不可用，状态一律放这里）
+    @Published var columnVisibility: NavigationSplitViewVisibility = .all
+    /// 日志检查器是否展开
+    @Published var isInspectorPresented: Bool = false
     @Published var pendingConfirm: ConfirmRequest?
     @Published var alertMessage: String?
     /// 壁纸是否含 X-Ray 效果（由后台预读包条目得出）
@@ -128,9 +133,28 @@ final class AppModel: ObservableObject {
         runSmokeExtractionIfRequested()
 
         // 冒烟钩子：PKD_SMOKE_TAB=storage 时直接打开存储页（用于截图/验证）
-        if ProcessInfo.processInfo.environment["PKD_SMOKE_TAB"] == "storage" {
+        let debugDefaults = UserDefaults.standard
+        if ProcessInfo.processInfo.environment["PKD_SMOKE_TAB"] == "storage"
+            || debugDefaults.string(forKey: "pkd.debug.tab") == "storage" {
             selectedTab = .storage
             refreshStorage()
+        }
+        if debugDefaults.string(forKey: "pkd.debug.tab") == "queue" {
+            selectedTab = .queue
+        }
+
+        // 冒烟钩子：PKD_SMOKE_INSPECTOR=1 展开日志检查器；PKD_SMOKE_SELECT=1 选中首项
+        if ProcessInfo.processInfo.environment["PKD_SMOKE_INSPECTOR"] != nil
+            || debugDefaults.bool(forKey: "pkd.debug.inspector") {
+            isInspectorPresented = true
+        }
+        if ProcessInfo.processInfo.environment["PKD_SMOKE_SELECT"] != nil
+            || debugDefaults.bool(forKey: "pkd.debug.select") {
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard let self, let item = self.items.first(where: { $0.isExtractable }) else { return }
+                self.selection = [item.id]
+            }
         }
     }
 

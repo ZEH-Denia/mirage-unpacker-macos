@@ -3,29 +3,31 @@ import PKDKit
 
 struct WallpaperDetailView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var appearance: AppearanceSettings
 
     var body: some View {
         if let item = model.focusedItem {
             detail(for: item)
         } else {
-            ContentUnavailableView(
-                "未选择壁纸",
-                systemImage: "sidebar.left",
-                description: Text("在左侧选择单个壁纸查看详情；按住 ⌘ 或 ⇧ 可多选后批量解包")
-            )
+            ContentUnavailableView {
+                Label("未选择壁纸", systemImage: "sidebar.left")
+            } description: {
+                Text("在左侧选择单个壁纸查看详情；按住 ⌘ 或 ⇧ 可多选后批量解包")
+            }
         }
     }
 
     private func detail(for item: WallpaperItem) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: PKD.Space.l) {
                 previewSection(item)
+                headerSection(item)
+                Divider()
                 metadataSection(item)
-                    .cardSurface()
+                Divider()
                 entrySection(item)
-                    .cardSurface()
             }
-            .padding(18)
+            .padding(PKD.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(item) }
@@ -38,13 +40,13 @@ struct WallpaperDetailView: View {
 
     private func previewSection(_ item: WallpaperItem) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous)
                 .fill(.quaternary.opacity(0.25))
 
             if let url = item.previewURL {
                 AsyncPreview(url: url)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: PKD.Space.xxs) {
                     Image(systemName: "photo")
                         .font(.largeTitle)
                     Text("无预览图").font(.caption)
@@ -52,91 +54,85 @@ struct WallpaperDetailView: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .frame(height: 260)
+        .frame(height: PKD.Size.heroHeight)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+        .clipShape(RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous))
+    }
+
+    // MARK: - 标题
+
+    private func headerSection(_ item: WallpaperItem) -> some View {
+        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+            Text(item.title)
+                .font(appearance.titleFont.weight(.bold))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(metaLine(item))
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
-        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+    }
+
+    private func metaLine(_ item: WallpaperItem) -> String {
+        var parts = [item.typeLabel]
+        if item.pkgSize > 0 { parts.append(item.sizeText) }
+        if !item.contentRating.isEmpty { parts.append(item.contentRating) }
+        if model.xrayFlags[item.id] == true { parts.append("含 X-Ray") }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - 元数据
 
     private func metadataSection(_ item: WallpaperItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(item.title)
-                .font(.title3.weight(.semibold))
-                .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: PKD.Space.xs) {
+            KeyValueRow("Workshop ID") {
+                Text(item.id)
+                    .font(.callout.monospaced())
+                    .textSelection(.enabled)
+            }
 
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                GridRow {
-                    label("类型")
-                    Text(item.typeLabel)
-                }
-                GridRow {
-                    label("Workshop ID")
-                    Text(item.id).textSelection(.enabled).font(.callout.monospaced())
-                }
-                GridRow {
-                    label("包大小")
-                    Text(item.pkgSize > 0 ? item.sizeText : "—")
-                }
-                GridRow {
-                    label("分级")
-                    Text(item.contentRating.isEmpty ? "—" : item.contentRating)
-                }
-                if model.xrayFlags[item.id] == true {
-                    GridRow {
-                        label("X-Ray")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("含 X-Ray 效果，解包时自动分离正常层与 X-Ray 层")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
+            KeyValueRow("输出目录") {
+                Text(OutputLayout.outputDirectory(for: item, root: model.settings.outputRoot).path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+            }
 
-                            if let entry = model.history.entry(for: item.id) {
-                                if let clean = entry.xrayCleanFile {
-                                    Text("正常层：\(clean)")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                }
-                                if let layer = entry.xrayLayerFile {
-                                    Text("X-Ray 层：\(layer)")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                }
+            if model.xrayFlags[item.id] == true {
+                KeyValueRow("X-Ray") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("含 X-Ray 效果，解包时自动分离正常层与 X-Ray 层")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if let entry = model.history.entry(for: item.id) {
+                            if let clean = entry.xrayCleanFile {
+                                Text("正常层：\(clean)")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .textSelection(.enabled)
+                            }
+                            if let layer = entry.xrayLayerFile {
+                                Text("X-Ray 层：\(layer)")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .textSelection(.enabled)
                             }
                         }
                     }
                 }
-                GridRow {
-                    label("输出目录")
-                    Text(OutputLayout.outputDirectory(for: item, root: model.settings.outputRoot).path)
+            }
+
+            if let issue = item.issue {
+                KeyValueRow("提示") {
+                    Text(issueText(issue))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .lineLimit(2)
-                }
-                if let issue = item.issue {
-                    GridRow {
-                        label("提示")
-                        Text(issueText(issue))
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
+                        .foregroundStyle(.orange)
                 }
             }
         }
-    }
-
-    private func label(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(width: 84, alignment: .leading)
     }
 
     private func issueText(_ issue: ProjectIssue) -> String {
@@ -153,8 +149,8 @@ struct WallpaperDetailView: View {
 
     @ViewBuilder
     private func entrySection(_ item: WallpaperItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: PKD.Space.xs) {
+            HStack(alignment: .firstTextBaseline) {
                 Text("包内条目").font(.headline)
                 Spacer()
                 if let key = item.pkgURL?.path, let info = model.infoCache[key] {
@@ -169,7 +165,7 @@ struct WallpaperDetailView: View {
             } else if item.pkgURL == nil {
                 Text("没有 pkg 文件").font(.caption).foregroundStyle(.secondary)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: PKD.Space.xs) {
                     ProgressView().controlSize(.small)
                     Text("正在读取包结构…").font(.caption).foregroundStyle(.secondary)
                 }
@@ -177,10 +173,10 @@ struct WallpaperDetailView: View {
         }
     }
 
-    // MARK: - 操作条
+    // MARK: - 操作条（按你的要求保留详情页底栏）
 
     private func actionBar(_ item: WallpaperItem) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: PKD.Space.xs) {
             Button {
                 model.selection = [item.id]
                 model.requestExtraction()
@@ -192,6 +188,7 @@ struct WallpaperDetailView: View {
                         : "shippingbox.and.arrow.backward"
                 )
             }
+            .buttonStyle(.borderedProminent)
             .disabled(!item.isExtractable)
 
             if model.history.entry(for: item.id) != nil {
@@ -210,12 +207,10 @@ struct WallpaperDetailView: View {
                 Label("在 Finder 中显示", systemImage: "magnifyingglass")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle().fill(.white.opacity(0.08)).frame(height: 0.5)
-        }
+        .padding(.horizontal, PKD.Space.m)
+        .padding(.vertical, PKD.Space.xs)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 

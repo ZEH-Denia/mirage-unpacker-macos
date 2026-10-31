@@ -4,6 +4,7 @@ import PKDKit
 
 struct StorageView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var appearance: AppearanceSettings
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -12,24 +13,46 @@ struct StorageView: View {
     }()
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
 
             if model.storageItems.isEmpty {
-                ContentUnavailableView(
-                    model.isScanningStorage ? "正在统计…" : "没有可清理的内容",
-                    systemImage: model.isScanningStorage ? "hourglass" : "externaldrive",
-                    description: Text(model.isScanningStorage
-                        ? "正在计算各目录占用"
-                        : "解包产物与导出图片都会出现在这里，可随时清理")
-                )
+                ContentUnavailableView {
+                    Label(
+                        model.isScanningStorage ? "正在统计…" : "没有可清理的内容",
+                        systemImage: model.isScanningStorage ? "hourglass" : "externaldrive"
+                    )
+                } description: {
+                    Text(model.isScanningStorage
+                         ? "正在计算各目录占用"
+                         : "解包产物与导出图片都会出现在这里，可随时清理")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 list
             }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        model.selectAllStorage(nil)
+                    } label: {
+                        Label("全选", systemImage: "checklist")
+                    }
+                    .disabled(model.storageItems.isEmpty)
 
-            Divider()
-            footer
+                    Button(role: .destructive) {
+                        model.requestTrashSelection()
+                    } label: {
+                        Label("移到废纸篓", systemImage: "trash")
+                    }
+                    .disabled(model.storageSelection.isEmpty)
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
+                }
+                .help("存储操作")
+            }
         }
         .onAppear {
             if model.storageItems.isEmpty {
@@ -55,30 +78,28 @@ struct StorageView: View {
     // MARK: - 顶部
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "externaldrive")
+        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+            Text("存储")
+                .font(appearance.titleFont.weight(.bold))
+
+            Text(summaryLine)
+                .font(.callout)
                 .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("存储占用")
-                    .font(.callout.weight(.medium))
-                Text("共 \(model.storageItems.count) 项 · "
-                     + ByteCountFormatter.string(fromByteCount: model.storageTotalBytes, countStyle: .file))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button {
-                model.refreshStorage()
-            } label: {
-                Label("重新统计", systemImage: "arrow.clockwise")
-            }
-            .disabled(model.isScanningStorage)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, PKD.Space.l)
+        .padding(.top, PKD.Space.l)
+        .padding(.bottom, PKD.Space.s)
+    }
+
+    private var summaryLine: String {
+        let total = ByteCountFormatter.string(fromByteCount: model.storageTotalBytes, countStyle: .file)
+        var line = "共 \(model.storageItems.count) 项 · \(total)"
+        if !model.storageSelection.isEmpty {
+            let selected = ByteCountFormatter.string(fromByteCount: model.selectedStorageBytes, countStyle: .file)
+            line += " · 已选 \(model.storageSelection.count) 项（\(selected)）"
+        }
+        return line
     }
 
     // MARK: - 列表
@@ -105,46 +126,37 @@ struct StorageView: View {
                     } header: {
                         HStack {
                             Text(kind.sectionTitle)
-                            Text("\(items.count)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
                             Spacer()
                             Text(ByteCountFormatter.string(
                                 fromByteCount: items.reduce(0) { $0 + $1.sizeBytes },
                                 countStyle: .file
                             ))
-                            .font(.caption2)
                             .foregroundStyle(.secondary)
-                            Button("全选") {
-                                model.selectAllStorage(kind)
-                            }
-                            .buttonStyle(.link)
-                            .font(.caption2)
                         }
+                        .font(.caption)
                     }
                 }
             }
         }
         .listStyle(.inset)
-        .scrollContentBackground(.hidden)
     }
 
     private func row(_ item: StorageItem) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: PKD.Space.xs) {
             Image(systemName: icon(for: item.kind))
                 .font(.callout)
-                .foregroundStyle(color(for: item.kind))
+                .foregroundStyle(.secondary)
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.displayName)
-                    .font(.callout)
+                    .font(.body)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Text("\(item.fileCount) 个文件"
                      + (item.modified.map { " · " + Self.dateFormatter.string(from: $0) } ?? ""))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -154,7 +166,7 @@ struct StorageView: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, PKD.Space.xxs)
     }
 
     private func icon(for kind: StorageItem.Kind) -> String {
@@ -164,47 +176,6 @@ struct StorageView: View {
         case .temporary: return "clock.arrow.circlepath"
         case .orphan: return "questionmark.folder"
         }
-    }
-
-    private func color(for kind: StorageItem.Kind) -> Color {
-        switch kind {
-        case .extracted: return .accentColor
-        case .images: return .green
-        case .temporary: return .orange
-        case .orphan: return .purple
-        }
-    }
-
-    // MARK: - 底部
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            if model.storageSelection.isEmpty {
-                Text("勾选要清理的项目")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("已选 \(model.storageSelection.count) 项 · "
-                     + ByteCountFormatter.string(fromByteCount: model.selectedStorageBytes, countStyle: .file))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button("全选") {
-                model.selectAllStorage(nil)
-            }
-            .disabled(model.storageItems.isEmpty)
-
-            Button("移到废纸篓", role: .destructive) {
-                model.requestTrashSelection()
-            }
-            .disabled(model.storageSelection.isEmpty)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
     }
 
     private var confirmBinding: Binding<Bool> {

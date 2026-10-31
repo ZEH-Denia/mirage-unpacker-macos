@@ -26,7 +26,7 @@ struct EntryListView: View {
                         Text(group.name)
                             .font(.callout.weight(.medium))
                         Text("\(group.entries.count)")
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -51,11 +51,11 @@ struct EntryListView: View {
             Spacer(minLength: 8)
 
             Text(ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
-        .padding(.leading, 18)
+        .padding(.leading, 22)
         .padding(.vertical, 1)
         .help(entry.path)
     }
