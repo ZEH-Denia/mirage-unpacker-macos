@@ -41,6 +41,7 @@ struct RootView: View {
                 debugWidth: UserDefaults.standard.object(forKey: "pkd.debug.windowWidth") as? CGFloat
             )
         )
+        .background(WindowScrollStyler())
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             // 必须测 NavigationSplitView 外层：折叠检查器会改变内容列宽度，
             // 若测内容列会形成「折叠→变宽→展开→变窄」的回环

@@ -182,12 +182,11 @@ struct LogTextView: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
-        // 细窄的 overlay 滚动条：只在滚动时出现，不占列宽（HIG：面板内用较小滚动条）
+        // 细窄的 overlay 滚动条：只在滚动时出现，不占列宽、不画轨道。
+        // 系统「自动」+ 鼠标时默认是旧式滚动条，右侧会多出一条白底矩形。
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-        if NSScroller.preferredScrollerStyle == .overlay {
-            scrollView.scrollerStyle = .overlay
-        }
+        scrollView.scrollerStyle = .overlay
         scrollView.verticalScroller?.controlSize = .small
         scrollView.horizontalScrollElasticity = .none
 

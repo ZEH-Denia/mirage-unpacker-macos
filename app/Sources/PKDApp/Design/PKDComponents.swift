@@ -56,33 +56,87 @@ struct WindowConfigurator: NSViewRepresentable {
 
 // MARK: - 滚动条外观
 
-/// 只调整滚动条外观，不改变滚动行为：overlay + 自动隐藏 + 小号。
+/// 把窗口内所有 `NSScrollView` 统一改成 overlay 滚动条。
 ///
-/// SwiftUI 的 `.scrollIndicators(.hidden)` 在个别系统版本上对 `List` 不生效，
-/// 用这个作为兜底；也用于日志面板的 NSScrollView。
-struct OverlayScrollerConfigurator: NSViewRepresentable {
-    var size: NSControl.ControlSize = .small
+/// 系统「显示滚动条：自动」+ 鼠标时，AppKit 画的是旧式滚动条：
+/// 右侧会常驻一条浅色轨道矩形，压在玻璃面板上非常突兀。
+/// overlay 样式只在滚动时浮出细滑块，不占位、不画轨道。
+///
+/// 这里显式覆盖系统偏好——用户明确要求去掉那条白底。
+struct WindowScrollStyler: NSViewRepresentable {
+    final class Coordinator {
+        var lastRun = Date.distantPast
+        var observer: NSObjectProtocol?
+
+        deinit {
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        let coordinator = Coordinator()
+        // 设置窗口、弹窗是独立 NSWindow，打开时补一次
+        coordinator.observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            DispatchQueue.main.async {
+                WindowScrollStyler.applyToAllWindows()
+            }
+        }
+        return coordinator
+    }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        DispatchQueue.main.async { configure(from: view) }
+        schedule(view, context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { configure(from: nsView) }
+        schedule(nsView, context.coordinator)
     }
 
-    private func configure(from view: NSView) {
-        guard let scrollView = sequence(first: view, next: \.superview)
-            .first(where: { $0 is NSScrollView }) as? NSScrollView else { return }
+    private func schedule(_ view: NSView, _ coordinator: Coordinator) {
+        // 节流：RootView 的 body 会因各种状态变化重算，不必每次都遍历视图树
+        guard Date().timeIntervalSince(coordinator.lastRun) > 0.4 else { return }
+        coordinator.lastRun = Date()
 
-        // 尊重系统「始终显示滚动条」：只有 overlay 偏好时才强制 overlay
-        if NSScroller.preferredScrollerStyle == .overlay {
-            scrollView.scrollerStyle = .overlay
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            Self.apply(to: window.contentView)
+            // 切页签/展开检查器会新建滚动视图，稍后再补一次
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                Self.applyToAllWindows()
+            }
         }
-        scrollView.autohidesScrollers = true
-        scrollView.verticalScroller?.controlSize = size
+    }
+
+    static func applyToAllWindows() {
+        for window in NSApp.windows {
+            apply(to: window.contentView)
+        }
+    }
+
+    private static func apply(to view: NSView?) {
+        guard let view else { return }
+
+        if let scrollView = view as? NSScrollView {
+            if scrollView.scrollerStyle != .overlay {
+                scrollView.scrollerStyle = .overlay
+            }
+            if !scrollView.autohidesScrollers {
+                scrollView.autohidesScrollers = true
+            }
+            scrollView.verticalScroller?.controlSize = .small
+        }
+
+        for subview in view.subviews {
+            apply(to: subview)
+        }
     }
 }
 

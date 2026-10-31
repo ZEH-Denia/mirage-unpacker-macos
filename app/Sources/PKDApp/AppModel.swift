@@ -171,6 +171,13 @@ final class AppModel: ObservableObject {
         if debugDefaults.string(forKey: "pkd.debug.tab") == "queue" {
             selectedTab = .queue
         }
+        // 冒烟钩子：pkd.debug.fakeLogs=1 时灌入 300 行日志，用于检查滚动条外观
+        if debugDefaults.bool(forKey: "pkd.debug.fakeLogs") {
+            for index in 0..<300 {
+                log.append(jobID: nil, text: "测试日志行 \(index) — Lorem ipsum dolor sit amet, consectetur adipiscing elit.", kind: .stdout)
+            }
+        }
+
         // 冒烟钩子：pkd.debug.filterMenu=1 时延时展开筛选面板，用于截图
         if debugDefaults.bool(forKey: "pkd.debug.filterMenu") {
             Task { [weak self] in
