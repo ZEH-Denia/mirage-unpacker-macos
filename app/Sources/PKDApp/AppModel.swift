@@ -208,9 +208,16 @@ final class AppModel: ObservableObject {
         if ProcessInfo.processInfo.environment["PKD_SMOKE_SELECT"] != nil
             || debugDefaults.bool(forKey: "pkd.debug.select") {
             Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                guard let self, let item = self.items.first(where: { $0.isExtractable }) else { return }
-                self.selection = [item.id]
+                // 素材库是异步扫描的，固定延时可能早于 items 就绪；
+                // 轮询等待，最多 15 秒，供截图回归稳定选中首项。
+                for _ in 0..<30 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard let self else { return }
+                    if let item = self.items.first(where: { $0.isExtractable }) {
+                        self.selection = [item.id]
+                        return
+                    }
+                }
             }
         }
     }

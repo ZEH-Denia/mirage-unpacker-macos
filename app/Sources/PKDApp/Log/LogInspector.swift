@@ -53,7 +53,9 @@ struct LogInspector: View {
             .buttonStyle(.borderless)
             .help("清空日志显示")
         }
-        .padding(.horizontal, PKD.Space.s)
+        // 与 NSTextView 的 textContainerInset(8) 对齐，
+        // 否则「日志」标题会比下面的日志正文右移 4pt。
+        .padding(.horizontal, 8)
         .padding(.vertical, PKD.Space.xs)
     }
 }

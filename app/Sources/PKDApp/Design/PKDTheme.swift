@@ -29,6 +29,14 @@ enum PKD {
         static let xl: CGFloat = 32
     }
 
+    /// 页面左右基准。
+    ///
+    /// 取值 16 是为了对齐系统 `.inset` 列表自带的段内边距（实测约 15.5–16）：
+    /// 页头、段标题、行图标、底栏共用同一条左准线，切换页面时不会左右跳。
+    enum Layout {
+        static let pageInset: CGFloat = 16
+    }
+
     enum Size {
         static let thumb: CGFloat = 40
         static let heroWide: CGFloat = 300

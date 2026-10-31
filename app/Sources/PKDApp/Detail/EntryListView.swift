@@ -23,11 +23,17 @@ struct EntryListView: View {
                         Image(systemName: "folder")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .frame(width: 14)
+                        // 组名占固定列宽，右侧的数量才会竖着对齐成一列
                         Text(group.name)
                             .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(width: 76, alignment: .leading)
                         Text("\(group.entries.count)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .monospacedDigit()
                         Spacer()
                     }
                 }

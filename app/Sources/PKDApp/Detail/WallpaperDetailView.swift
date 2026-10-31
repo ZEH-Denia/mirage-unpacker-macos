@@ -14,6 +14,8 @@ struct WallpaperDetailView: View {
             } description: {
                 Text("在左侧选择单个壁纸查看详情；按住 ⌘ 或 ⇧ 可多选后批量解包")
             }
+            // 必须显式吃满可用空间，否则空状态会缩成自身尺寸贴在左上角
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -27,11 +29,11 @@ struct WallpaperDetailView: View {
                 Divider()
                 entrySection(item)
             }
-            .padding(PKD.Space.l)
+            .padding(.horizontal, PKD.Layout.pageInset)
+            .padding(.vertical, PKD.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)
-        .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(item) }
         .task(id: item.id) {
             model.loadInfo(for: item)
         }
@@ -183,51 +185,6 @@ struct WallpaperDetailView: View {
                 }
             }
         }
-    }
-
-    // MARK: - 操作条（按你的要求保留详情页底栏）
-
-    private func actionBar(_ item: WallpaperItem) -> some View {
-        // 窄窗口下按钮文字降级为图标；作用域是「当前这一个」，与工具栏的「所选」区分
-        let showTitle = model.layout != .narrow
-
-        return HStack(spacing: PKD.Space.xs) {
-            Button {
-                model.requestExtraction(for: [item])
-            } label: {
-                Label(
-                    model.settings.exportImagesOnly ? "导出此壁纸图片" : "解包此壁纸",
-                    systemImage: model.settings.exportImagesOnly
-                        ? "photo.on.rectangle.angled"
-                        : "shippingbox.and.arrow.backward"
-                )
-                .labelStyle(AdaptiveLabelStyle(showTitle: showTitle))
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!item.isExtractable)
-
-            if model.history.entry(for: item.id) != nil {
-                Button {
-                    model.openOutput(for: item)
-                } label: {
-                    Label("打开输出", systemImage: "folder")
-                        .labelStyle(AdaptiveLabelStyle(showTitle: showTitle))
-                }
-            }
-
-            Spacer()
-
-            Button {
-                model.revealInFinder(item.pkgURL ?? item.folderURL)
-            } label: {
-                Label("在 Finder 中显示", systemImage: "magnifyingglass")
-                    .labelStyle(AdaptiveLabelStyle(showTitle: showTitle))
-            }
-        }
-        .padding(.horizontal, PKD.Space.m)
-        .padding(.vertical, PKD.Space.xs)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
     }
 }
 

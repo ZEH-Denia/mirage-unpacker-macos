@@ -29,18 +29,7 @@ struct JobQueueView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
-            Text("队列")
-                .font(appearance.titleFont.weight(.bold))
-
-            Text(summary)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, PKD.Space.l)
-        .padding(.top, PKD.Space.l)
-        .padding(.bottom, PKD.Space.s)
+        PageHeader(title: "队列", subtitle: summary, titleFont: appearance.titleFont)
     }
 
     private var summary: String {

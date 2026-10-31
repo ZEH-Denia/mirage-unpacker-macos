@@ -15,31 +15,40 @@ struct WallpaperListView: View {
                 .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 4))
 
             Section {
-                ForEach(model.filteredItems) { item in
-                    WallpaperRow(item: item)
-                        .tag(item.id)
-                        .selectionDisabled(!item.isExtractable)
-                        .contextMenu {
-                            Button("解包此项") {
-                                model.selection = [item.id]
-                                model.requestExtraction()
-                            }
-                            .disabled(!item.isExtractable)
+                if model.filteredItems.isEmpty {
+                    // 空状态放进列表里而不是 overlay：
+                    // overlay 会盖住上面的筛选行，筛选后无结果时就点不回来了。
+                    emptyState
+                        .selectionDisabled(true)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 8, bottom: 12, trailing: 8))
+                } else {
+                    ForEach(model.filteredItems) { item in
+                        WallpaperRow(item: item)
+                            .tag(item.id)
+                            .selectionDisabled(!item.isExtractable)
+                            .contextMenu {
+                                Button("解包此项") {
+                                    model.selection = [item.id]
+                                    model.requestExtraction()
+                                }
+                                .disabled(!item.isExtractable)
 
-                            if model.history.entry(for: item.id) != nil {
-                                Button("打开输出目录") {
-                                    model.openOutput(for: item)
+                                if model.history.entry(for: item.id) != nil {
+                                    Button("打开输出目录") {
+                                        model.openOutput(for: item)
+                                    }
+                                }
+
+                                Button("在 Finder 中显示") {
+                                    model.revealInFinder(item.pkgURL ?? item.folderURL)
+                                }
+
+                                Button("复制文件夹路径") {
+                                    model.copyPath(item.folderURL)
                                 }
                             }
-
-                            Button("在 Finder 中显示") {
-                                model.revealInFinder(item.pkgURL ?? item.folderURL)
-                            }
-
-                            Button("复制文件夹路径") {
-                                model.copyPath(item.folderURL)
-                            }
-                        }
+                    }
                 }
             } header: {
                 HStack {
@@ -54,21 +63,29 @@ struct WallpaperListView: View {
         .scrollIndicators(.hidden)
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "搜索标题或 ID")
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
-        .overlay {
-            if model.filteredItems.isEmpty {
-                ContentUnavailableView {
-                    Label(
-                        model.isScanning ? "正在扫描…" : "没有可显示的壁纸",
-                        systemImage: model.isScanning ? "hourglass" : "photo.on.rectangle.angled"
-                    )
-                } description: {
-                    Text(emptyDescription)
-                } actions: {
-                    Button("重新扫描") { model.refresh() }
-                        .disabled(model.isScanning)
-                }
-            }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: PKD.Space.xs) {
+            Image(systemName: model.isScanning ? "hourglass" : "photo.on.rectangle.angled")
+                .font(.title2)
+                .foregroundStyle(.tertiary)
+
+            Text(model.isScanning ? "正在扫描…" : "没有可显示的壁纸")
+                .font(.callout.weight(.medium))
+
+            Text(emptyDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("重新扫描") { model.refresh() }
+                .disabled(model.isScanning)
+                .padding(.top, PKD.Space.xxs)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, PKD.Space.xs)
     }
 
     private var emptyDescription: String {
@@ -108,6 +125,9 @@ struct WallpaperListView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // 侧栏行内容自带约 20pt 的尾部内缩，箭头会比搜索框右缘短一截；
+            // 往右借 10pt，让箭头与搜索框、行的右缘落在同一条线上。
+            .padding(.trailing, -10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -194,8 +214,9 @@ struct WallpaperRow: View {
                     metadataLine(full: false)
                 }
             }
-
-            Spacer(minLength: 0)
+            // 文字列必须吃满剩余宽度：靠 Spacer 撑开时，
+            // 长标题会把末尾的 nosign 图标挤出侧栏边界。
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if !item.isExtractable {
                 Image(systemName: "nosign")

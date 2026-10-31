@@ -56,18 +56,7 @@ struct StorageView: View {
     // MARK: - 顶部
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
-            Text("存储")
-                .font(appearance.titleFont.weight(.bold))
-
-            Text(summaryLine)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, PKD.Space.l)
-        .padding(.top, PKD.Space.l)
-        .padding(.bottom, PKD.Space.s)
+        PageHeader(title: "存储", subtitle: summaryLine, titleFont: appearance.titleFont)
     }
 
     private var summaryLine: String {

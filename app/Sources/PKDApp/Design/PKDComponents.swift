@@ -140,6 +140,33 @@ struct WindowScrollStyler: NSViewRepresentable {
     }
 }
 
+// MARK: - 页面标题
+
+/// 队列 / 存储共用的页头。
+///
+/// 左右内边距必须用 `PKD.Layout.pageInset`，与列表自带的段内边距一致，
+/// 否则页头会比下面的段标题、行图标各缩进 8pt，出现参差的左边缘。
+struct PageHeader: View {
+    let title: String
+    let subtitle: String
+    let titleFont: Font
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PKD.Space.xxs) {
+            Text(title)
+                .font(titleFont.weight(.bold))
+
+            Text(subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, PKD.Layout.pageInset)
+        .padding(.top, PKD.Space.l)
+        .padding(.bottom, PKD.Space.s)
+    }
+}
+
 // MARK: - 引擎告警条
 
 /// 内容区顶部的告警条（原来是贴在窗口顶部的 safeAreaInset）。
@@ -163,7 +190,7 @@ struct NoticeBar: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, PKD.Space.s)
+        .padding(.horizontal, PKD.Layout.pageInset)
         .padding(.vertical, PKD.Space.xs)
         .background(color.opacity(0.12))
         .overlay(alignment: .bottom) { Divider() }
@@ -193,7 +220,7 @@ struct SidebarStatus: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.horizontal, PKD.Space.s)
+        .padding(.horizontal, PKD.Layout.pageInset)
         .padding(.vertical, PKD.Space.xs)
     }
 }

@@ -20,33 +20,19 @@ private struct SettingsForm: View {
             appearanceSection
 
             Section("路径") {
-                LabeledContent("素材库") {
-                    HStack(spacing: 8) {
-                        Text(settings.libraryRoot.path)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button("选择…") { chooseLibraryRoot() }
-                        Button("恢复默认") {
-                            settings.libraryRoot = LibraryScanner.defaultRoot
-                            model.refresh()
-                        }
+                pathRow("素材库", path: settings.libraryRoot.path) {
+                    Button("选择…") { chooseLibraryRoot() }
+                    Button("恢复默认") {
+                        settings.libraryRoot = LibraryScanner.defaultRoot
+                        model.refresh()
                     }
                 }
 
-                LabeledContent("输出目录") {
-                    HStack(spacing: 8) {
-                        Text(settings.outputRoot.path)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button("选择…") { chooseOutputRoot() }
-                        Button("打开") {
-                            try? FileManager.default.createDirectory(at: settings.outputRoot, withIntermediateDirectories: true)
-                            NSWorkspace.shared.open(settings.outputRoot)
-                        }
+                pathRow("输出目录", path: settings.outputRoot.path) {
+                    Button("选择…") { chooseOutputRoot() }
+                    Button("打开") {
+                        try? FileManager.default.createDirectory(at: settings.outputRoot, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(settings.outputRoot)
                     }
                 }
             }
@@ -59,21 +45,14 @@ private struct SettingsForm: View {
                 .pickerStyle(.segmented)
 
                 if settings.exportImagesOnly {
-                    LabeledContent("图片目录") {
-                        HStack(spacing: 8) {
-                            Text(settings.imageExportRoot.path)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Button("选择…") { chooseImageRoot() }
-                            Button("打开") {
-                                try? FileManager.default.createDirectory(
-                                    at: settings.imageExportRoot,
-                                    withIntermediateDirectories: true
-                                )
-                                NSWorkspace.shared.open(settings.imageExportRoot)
-                            }
+                    pathRow("图片目录", path: settings.imageExportRoot.path) {
+                        Button("选择…") { chooseImageRoot() }
+                        Button("打开") {
+                            try? FileManager.default.createDirectory(
+                                at: settings.imageExportRoot,
+                                withIntermediateDirectories: true
+                            )
+                            NSWorkspace.shared.open(settings.imageExportRoot)
                         }
                     }
 
@@ -129,6 +108,33 @@ private struct SettingsForm: View {
         }
         .formStyle(.grouped)
         .frame(width: 600, height: 700)
+    }
+
+    // MARK: - 路径行
+
+    /// 路径 + 尾部按钮的自定义行。
+    ///
+    /// 不能用 `LabeledContent`：路径一长，它会自动把值换到下一行，
+    /// 于是这一行比其它行高出一截，标签和值也不在同一条基线上。
+    /// 这里固定为单行——路径按中间截断，按钮始终贴右缘。
+    private func pathRow<Actions: View>(
+        _ label: String,
+        path: String,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        HStack(spacing: PKD.Space.xs) {
+            Text(label)
+
+            Text(path)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            actions()
+        }
     }
 
     // MARK: - 外观

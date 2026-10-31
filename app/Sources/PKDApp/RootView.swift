@@ -5,6 +5,7 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
     @EnvironmentObject private var accessibility: AccessibilitySettings
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         NavigationSplitView(columnVisibility: columnBinding) {
@@ -26,10 +27,6 @@ struct RootView: View {
                             max: PKD.Size.inspectorMax
                         )
                 }
-                .overlay(alignment: .bottomTrailing) {
-                    JobHUD()
-                        .padding([.trailing, .bottom], PKD.Space.m)
-                }
         }
         .navigationSplitViewStyle(.balanced)
         .tint(appearance.accentColor)
@@ -42,6 +39,12 @@ struct RootView: View {
             )
         )
         .background(WindowScrollStyler())
+        .task {
+            // 冒烟钩子：pkd.debug.settings=1 时自动打开设置窗口，供截图回归
+            guard UserDefaults.standard.bool(forKey: "pkd.debug.settings") else { return }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            openSettings()
+        }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             // 必须测 NavigationSplitView 外层：折叠检查器会改变内容列宽度，
             // 若测内容列会形成「折叠→变宽→展开→变窄」的回环
@@ -221,6 +224,7 @@ struct RootView: View {
             Label("更多", systemImage: "ellipsis.circle")
         }
         .labelStyle(.iconOnly)
+        .menuIndicator(.hidden)
         .help("更多操作")
     }
 
@@ -302,7 +306,19 @@ private struct ContentColumn: View {
                     StorageView()
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // 不再用 .topLeading：详情页空状态是弹性视图，居左会让它贴在左上角。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 任务胶囊作为页面底部的安全区插入：为它让出位置，
+            // 于是它永远浮在内容之上、底栏之上，不会盖住任何按钮。
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                JobHUD()
+            }
+
+            // 底栏提到内容列里：这样胶囊、底栏、页面三者的上下顺序是确定的，
+            // 切换页签时底栏也不会跟着详情页一起消失再重建。
+            if model.selectedTab == .detail, let item = model.focusedItem {
+                DetailActionBar(item: item)
+            }
         }
     }
 
