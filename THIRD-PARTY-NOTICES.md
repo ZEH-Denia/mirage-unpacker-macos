@@ -59,7 +59,16 @@ ImageSharp 的版权声明：`Copyright (c) Six Labors`。
 界面使用 Apple 系统框架（SwiftUI / AppKit / ImageIO / CoreGraphics / Compression），
 随 macOS 提供，不受本项目分发。
 
-## 4. 相关但未使用的项目
+## 4. Sparkle — 应用内更新框架
+
+- 项目：https://github.com/sparkle-project/Sparkle
+- 作者：Sparkle Project contributors
+- 版本：2.10.1
+- 许可证：MIT，含发行包附带的第三方许可证
+- 用途：检查并安装本项目发布的应用更新；更新 ZIP 与 appcast 使用独立 EdDSA 密钥签名。
+- 许可证全文随 `.app` 分发于 `Contents/Resources/SPARKLE-LICENSE.txt`。
+
+## 5. 相关但未使用的项目
 
 [Mirage](https://github.com/laobamac/MirageWallpaper)（GPL-3.0）是本项目的配套播放器，
 本项目**没有**引用、链接或修改它的任何代码，只是读取它下载到

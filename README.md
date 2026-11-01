@@ -49,6 +49,8 @@ Mirage 订阅下载
 2. 首次打开：**右键点图标 → 打开**（ad-hoc 签名、未公证，属正常现象）
 3. 若仍被拦：`xattr -dr com.apple.quarantine /Applications/PKD.app`
 
+安装后可从菜单栏「检查更新…」更新。若应用内检查、下载或安装失败，弹窗提供「前往 GitHub 手动下载」按钮。由于应用未做 Apple 公证，首次下载的新版本仍可能出现 macOS 安全提示。
+
 > Intel Mac 暂无预编译包，请按下方「构建」从源码编译。
 
 ---
@@ -64,7 +66,8 @@ Mirage 订阅下载
 - **界面**：参考 Apple Music 的信息架构——导航侧栏、内容优先的网格、底部悬浮任务条；玻璃材质按 HIG 只用在控制层，内容区保持标准背景
 - **磁盘预检**：批量前估算产物大小并检查剩余空间
 - **可取消 / 可重试**：SIGINT → SIGTERM → SIGKILL 三级取消；崩溃类失败自动重试一次
-- **零外部依赖**：引擎编译为 self-contained 单文件，随 `.app` 一起分发，用户无需安装 .NET
+- **应用内更新**：Sparkle 定期检查更新，也可手动检查；更新失败时可跳转 GitHub Releases 手动下载安装
+- **独立解包引擎**：RePKG 编译为 self-contained 单文件随 `.app` 分发，用户无需安装 .NET
 
 ## 系统要求
 
@@ -84,12 +87,27 @@ cd mirage-unpacker-macos
 # 1. 编译解包引擎（首次会自动 clone 上游并应用 macOS 补丁）
 ./tools/build-repkg.sh              # Apple Silicon；Intel 用 ./tools/build-repkg.sh osx-x64
 
-# 2. 打包应用
-cd app && ./scripts/make-app.sh     # 产出 app/dist/PKD.app
+# 2. 解析 Sparkle 更新框架（首次构建或升级 Sparkle 时）
+(cd app && swift package resolve --disable-sandbox)
 
-# 3. 安装（可选）
+# 3. 打包应用
+(cd app && ./scripts/make-app.sh)   # 产出 app/dist/PKD.app
+
+# 4. 安装（可选）
 cp -R app/dist/PKD.app /Applications/
 ```
+
+### 发布应用内更新
+
+每个发布版本都递增 `VERSION`，构建号默认使用相同的数字版本。打包后在生成 appcast 的同一台 Mac 上运行 Sparkle 工具，签名私钥保存在该用户的登录钥匙串中：
+
+```bash
+(cd app && PKD_VERSION=1.6.0 PKD_BUILD=1.6.0 ./scripts/make-app.sh)
+(cd app && ./scripts/package-release.sh 1.6.0)
+(cd app && ./scripts/generate-appcast.sh 1.6.0 v1.6.0)
+```
+
+先把 ZIP 上传到对应 GitHub Release，再提交 `updates/appcast.xml`。GitHub Actions 会把签名 feed 部署到 GitHub Pages。EdDSA 私钥不放进仓库或 App；丢失时旧安装无法验证换钥更新，需要用户从 Releases 手动安装。
 
 `build-repkg.sh` 会依次尝试 `~/.dotnet/dotnet`、`/opt/homebrew/bin/dotnet`、`/usr/local/share/dotnet/dotnet`。
 若都没有，按脚本提示安装（Homebrew 或官方 `dotnet-install.sh`，后者不需要 sudo）。
@@ -296,7 +314,7 @@ SwiftUI (PKDApp)
 
 ## 已知限制
 
-- 无开发者证书，`.app` 为 ad-hoc 签名。他人首次打开需右键「打开」，或 `xattr -d com.apple.quarantine`
+- 不使用 Developer ID 或 Apple 公证，`.app` 保持 ad-hoc 签名；首次打开需按 macOS 提示手动允许。Sparkle 使用独立 EdDSA 密钥验证更新包，不能替代 Gatekeeper 公证
 - 日志面板显示统一日志流（用 `=== 标题 [id] ===` 分隔任务），未做按任务过滤
 - 视频类壁纸（`type: video`，无 pkg）会灰显且不可勾选
 - 上游 RePKG 更新后，`tools/repkg-macos.patch` 可能需要手动 rebase
@@ -308,10 +326,13 @@ app/
   Package.swift                  SwiftPM 清单
   Sources/PKDKit/                引擎封装、素材库、队列、日志（纯逻辑，可单测）
   Sources/PKDApp/                SwiftUI 界面
+  Sources/PKDApp/UpdateManager.swift  Sparkle 更新器与失败时的 GitHub 回退
   Sources/PKDSelfTest/           自测可执行目标（CLT 环境无 XCTest）
   scripts/make-app.sh            组装 .app + 图标 + ad-hoc 签名
   scripts/package-release.sh     打包 Release 资产（统一命名）
+  scripts/generate-appcast.sh    使用本机 Keychain 私钥签名更新并生成 appcast
   scripts/verify.sh              回归验证
+updates/                         GitHub Pages 上的 Sparkle 更新 feed
 tools/
   build-repkg.sh                 编译引擎（clone 上游 + 应用补丁）
   repkg-macos.patch              RePKG macOS 移植与发布补丁

@@ -7,6 +7,7 @@ struct PKDApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var appearance = AppearanceSettings()
     @StateObject private var accessibility = AccessibilitySettings()
+    @StateObject private var updater = AppUpdater()
 
     init() {
         // 本应用统一使用 overlay 滚动条。
@@ -31,10 +32,26 @@ struct PKDApp: App {
                 .environmentObject(appearance)
                 .environmentObject(accessibility)
                 .onAppear { appearance.applyTheme() }
+                .alert(item: $updater.failure) { failure in
+                    Alert(
+                        title: Text("更新未能完成"),
+                        message: Text(failure.message),
+                        primaryButton: .default(Text("前往 GitHub 手动下载")) {
+                            updater.openGitHubReleases()
+                        },
+                        secondaryButton: .cancel(Text("关闭"))
+                    )
+                }
         }
         .defaultSize(width: 1100, height: 740)
         .windowResizability(.contentMinSize)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") {
+                    updater.checkForUpdates()
+                }
+            }
+
             CommandGroup(after: .newItem) {
                 Button("刷新素材库") {
                     model.refreshCurrentContext()

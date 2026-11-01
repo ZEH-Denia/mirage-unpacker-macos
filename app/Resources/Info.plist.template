@@ -20,6 +20,16 @@
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>SUFeedURL</key>
+    <string>https://zeh-denia.github.io/mirage-unpacker-macos/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>9BA+eKQTU6UavJtkXrrveh85eVs4hlYKheV5F/XSAKk=</string>
+    <key>SURequireSignedFeed</key>
+    <true/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>

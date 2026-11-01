@@ -9,6 +9,9 @@ let package = Package(
         .library(name: "PKDKit", targets: ["PKDKit"]),
         .executable(name: "pkd-selftest", targets: ["PKDSelfTest"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         .target(
             name: "PKDKit",
@@ -16,8 +19,14 @@ let package = Package(
         ),
         .executableTarget(
             name: "PKDApp",
-            dependencies: ["PKDKit"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            dependencies: [
+                "PKDKit",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../Frameworks"]),
+            ]
         ),
         .executableTarget(
             name: "PKDSelfTest",

@@ -8,7 +8,12 @@ APP="$ROOT/dist/PKD.app"
 TAG_VERSION="$(git -C "$REPO" describe --tags --exact-match HEAD 2>/dev/null || true)"
 TAG_VERSION="${TAG_VERSION#v}"
 VERSION="${PKD_VERSION:-${TAG_VERSION:-$(tr -d '\n' < "$REPO/VERSION")}}"
-BUILD="${PKD_BUILD:-1}"
+BUILD="${PKD_BUILD:-$VERSION}"
+
+if ! [[ "$BUILD" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+  echo "CFBundleVersion 必须是 1 到 3 段的数字版本，当前值：$BUILD" >&2
+  exit 1
+fi
 
 echo "==> 编译 release"
 cd "$ROOT"
@@ -24,9 +29,17 @@ if [ ! -f "$REPO/tools/bin/REPKG-THIRD-PARTY-NOTICES.txt" ]; then
   exit 1
 fi
 
+SPARKLE_ARTIFACT="$ROOT/.build/artifacts/Sparkle/Sparkle"
+SPARKLE_FRAMEWORK="$(find "$SPARKLE_ARTIFACT/Sparkle.xcframework" -path '*/Sparkle.framework' -type d -print -quit 2>/dev/null || true)"
+if [ -z "$SPARKLE_FRAMEWORK" ] || [ ! -d "$SPARKLE_FRAMEWORK" ]; then
+  echo "缺少 Sparkle.framework：$SPARKLE_ARTIFACT" >&2
+  echo "请先运行 swift package resolve --disable-sandbox" >&2
+  exit 1
+fi
+
 echo "==> 组装 bundle"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
 cp "$ROOT/.build/release/PKD" "$APP/Contents/MacOS/PKD"
 chmod +x "$APP/Contents/MacOS/PKD"
@@ -34,6 +47,9 @@ chmod +x "$APP/Contents/MacOS/PKD"
 # 引擎放在 MacOS/ 而不是 Resources/：便于被 codesign 当作辅助可执行文件一起签名
 cp "$REPO/tools/bin/repkg" "$APP/Contents/MacOS/repkg"
 chmod 755 "$APP/Contents/MacOS/repkg"
+
+echo "==> 嵌入 Sparkle"
+ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
 
 echo "==> 生成图标"
 ICNS="$ROOT/dist/AppIcon.icns"
@@ -56,6 +72,8 @@ cp "$REPO/LICENSE" "$APP/Contents/Resources/LICENSE.txt"
 cp "$REPO/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.md"
 cp "$REPO/tools/bin/REPKG-THIRD-PARTY-NOTICES.txt" \
   "$APP/Contents/Resources/REPKG-THIRD-PARTY-NOTICES.txt"
+cp "$REPO/third-party-licenses/Sparkle-LICENSE.txt" \
+  "$APP/Contents/Resources/SPARKLE-LICENSE.txt"
 
 echo "==> 写入 Info.plist"
 cp "$ROOT/Resources/Info.plist.template" "$APP/Contents/Info.plist"
@@ -71,6 +89,10 @@ codesign --force --sign - --identifier com.zeh.pkd "$APP"
 xattr -cr "$APP" || true
 
 echo "==> 验证"
-codesign --verify --strict "$APP" && echo "签名校验通过"
+codesign --verify --deep --strict "$APP" && echo "签名校验通过"
+otool -L "$APP/Contents/MacOS/PKD" | rg -q 'Sparkle.framework/Versions/.*/Sparkle' || {
+  echo "PKD 可执行文件未链接到内嵌的 Sparkle.framework" >&2
+  exit 1
+}
 echo "✅ 产物：$APP"
 du -sh "$APP"
