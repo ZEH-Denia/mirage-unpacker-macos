@@ -102,9 +102,9 @@ cp -R app/dist/PKD.app /Applications/
 每个发布版本都递增 `VERSION`，构建号默认使用相同的数字版本。打包后在生成 appcast 的同一台 Mac 上运行 Sparkle 工具，签名私钥保存在该用户的登录钥匙串中：
 
 ```bash
-(cd app && PKD_VERSION=1.6.0 PKD_BUILD=1.6.0 ./scripts/make-app.sh)
-(cd app && ./scripts/package-release.sh 1.6.0)
-(cd app && ./scripts/generate-appcast.sh 1.6.0 v1.6.0)
+(cd app && PKD_VERSION=1.6.1 PKD_BUILD=1.6.1 ./scripts/make-app.sh)
+(cd app && ./scripts/package-release.sh 1.6.1)
+(cd app && ./scripts/generate-appcast.sh 1.6.1 v1.6.1)
 ```
 
 先把 ZIP 上传到对应 GitHub Release，再提交 `updates/appcast.xml`。GitHub Actions 会把签名 feed 部署到 GitHub Pages。EdDSA 私钥不放进仓库或 App；丢失时旧安装无法验证换钥更新，需要用户从 Releases 手动安装。

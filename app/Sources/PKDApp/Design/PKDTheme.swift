@@ -33,10 +33,10 @@ enum PKD {
 
     /// 页面左右基准。
     ///
-    /// 取值 16 是为了对齐系统 `.inset` 列表自带的段内边距（实测约 15.5–16）：
-    /// 页头、段标题、行图标、底栏共用同一条左准线，切换页面时不会左右跳。
+    /// 与 macOS 分栏工具栏标题的默认 leading inset 对齐；页头、卡片网格、页脚
+    /// 共用同一条左准线，主区不会比工具栏标题多缩进一档。
     enum Layout {
-        static let pageInset: CGFloat = 16
+        static let pageInset: CGFloat = 12
     }
 
     enum Size {
