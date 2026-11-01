@@ -39,7 +39,7 @@ struct WallpaperCard: View {
                 RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous)
                     .strokeBorder(
                         isSelected ? Color.accentColor : Color.clear,
-                        lineWidth: isSelected ? 3 : 0
+                        lineWidth: isSelected ? 2 : 0
                     )
             }
             .opacity(item.isExtractable ? 1 : 0.55)

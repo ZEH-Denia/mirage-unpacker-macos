@@ -3,8 +3,8 @@ import PKDKit
 
 /// 素材库筛选栏：排序、类型、X-Ray、网格密度、清除筛选。
 ///
-/// 单独一行而不是塞进页头，是因为页头右侧已经被搜索框占满；
-/// 这一行只在素材库页出现，队列/存储页不受影响。
+/// 控件形状对齐 Mirage 参考界面：统一 26pt 高、6pt 圆角、扁平填充、无边框无下拉箭头。
+/// 单独一行而不是塞进页头，是因为页头右侧已经被搜索框占满。
 struct LibraryFilterBar: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -22,12 +22,7 @@ struct LibraryFilterBar: View {
             Spacer(minLength: PKD.Space.xs)
 
             if model.hasExtraFilters {
-                Button("清除筛选") {
-                    model.clearExtraFilters()
-                }
-                .buttonStyle(.link)
-                .controlSize(.small)
-                .help("只清除类型与 X-Ray 条件，不动搜索、侧栏与排序")
+                clearButton
             }
 
             densityMenu
@@ -40,8 +35,6 @@ struct LibraryFilterBar: View {
 
     private var sortMenu: some View {
         Menu {
-            // 不用 Picker(.inline)：Menu 里的 Picker 渲染方式随系统版本变化，
-            // 显式 Button + 勾选图标在任何版本都一致。
             ForEach(LibrarySort.allCases) { sort in
                 Button {
                     model.sort = sort
@@ -54,10 +47,12 @@ struct LibraryFilterBar: View {
                 }
             }
         } label: {
-            Label("排序：\(model.sort.shortLabel)", systemImage: "arrow.up.arrow.down")
+            chip(icon: "arrow.up.arrow.down", text: "排序：\(model.sort.shortLabel)")
         }
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .modifier(ChipSurface())
         .help("排序方式（会记住，下次启动沿用）")
     }
 
@@ -77,10 +72,12 @@ struct LibraryFilterBar: View {
                 }
             }
         } label: {
-            Label("类型：\(model.typeFilter.label)", systemImage: "square.stack.3d.up")
+            chip(icon: "square.stack.3d.up", text: "类型：\(model.typeFilter.label)")
         }
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .modifier(ChipSurface())
         .help("按素材类型筛选，与搜索和侧栏条件叠加")
     }
 
@@ -100,13 +97,15 @@ struct LibraryFilterBar: View {
                 }
             }
         } label: {
-            Label(
-                model.xrayEngineAvailable ? "X-Ray：\(model.xrayFilter.label)" : "X-Ray：不可用",
-                systemImage: "eye"
+            chip(
+                icon: "eye",
+                text: model.xrayEngineAvailable ? "X-Ray：\(model.xrayFilter.label)" : "X-Ray：不可用"
             )
         }
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .modifier(ChipSurface())
         .disabled(!model.xrayEngineAvailable)
         .help(xrayHelp)
     }
@@ -138,22 +137,77 @@ struct LibraryFilterBar: View {
         .help("正在读取 X-Ray 状态")
     }
 
+    // MARK: - 清除筛选
+
+    private var clearButton: some View {
+        Button("清除筛选") {
+            model.clearExtraFilters()
+        }
+        .buttonStyle(.plain)
+        .font(.caption.weight(.medium))
+        .foregroundStyle(Color.accentColor)
+        .padding(.horizontal, PKD.Control.hPadding)
+        .frame(height: PKD.Control.height)
+        .help("只清除类型与 X-Ray 条件，不动搜索、侧栏与排序")
+    }
+
     // MARK: - 密度
 
     private var densityMenu: some View {
         Menu {
-            Picker("网格密度", selection: $appearance.density) {
-                ForEach(AppearanceSettings.Density.allCases) { density in
-                    Text(density.label).tag(density)
+            ForEach(AppearanceSettings.Density.allCases) { density in
+                Button {
+                    appearance.density = density
+                } label: {
+                    if appearance.density == density {
+                        Label(density.label, systemImage: "checkmark")
+                    } else {
+                        Text(density.label)
+                    }
                 }
             }
-            .pickerStyle(.inline)
         } label: {
-            Label("网格密度", systemImage: "square.grid.3x3")
+            chip(icon: "square.grid.3x3", text: nil)
         }
-        .labelStyle(.iconOnly)
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .modifier(ChipSurface())
         .help("网格密度：\(appearance.density.label)（与设置里的「界面密度」同步）")
+    }
+
+    // MARK: - 共用外观
+
+    /// 与参考界面一致的扁平控件内容：图标 + 文字，不加任何背景
+    private func chip(icon: String, text: String?) -> some View {
+        HStack(spacing: PKD.Control.iconGap) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let text {
+                Text(text)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(.primary)
+    }
+}
+
+/// 扁平控件外表面：26pt 高、6pt 圆角、轻微填充、无边框。
+///
+/// 必须套在 `Menu` 外层而不是 label 上——`.menuStyle(.borderlessButton)` 会把
+/// label 自身的背景吃掉，套在外面才画得出来。
+private struct ChipSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, PKD.Control.hPadding)
+            .frame(height: PKD.Control.height)
+            .background(
+                PKD.Palette.controlFill,
+                in: RoundedRectangle(cornerRadius: PKD.Control.radius, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: PKD.Control.radius, style: .continuous))
     }
 }

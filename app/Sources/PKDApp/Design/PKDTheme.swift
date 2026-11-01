@@ -21,6 +21,20 @@ enum PKD {
         static let bar: CGFloat = 14
     }
 
+    /// 控件度量：统一按钮/菜单/输入框的形状与尺寸。
+    ///
+    /// 取自 Mirage 参考界面实测：按钮高约 24pt、圆角约 5–6pt、扁平填充无边框。
+    /// 这里取 26pt 高度，既贴近参考，又留出 macOS 的点击热区。
+    enum Control {
+        static let height: CGFloat = 26
+        static let radius: CGFloat = 6
+        static let hPadding: CGFloat = 10
+        static let iconGap: CGFloat = 6
+        /// 输入框（搜索）比按钮略高，圆角稍大
+        static let fieldHeight: CGFloat = 28
+        static let fieldRadius: CGFloat = 8
+    }
+
     /// 4pt 基准的间距阶梯。
     enum Space {
         static let xxs: CGFloat = 4
@@ -81,5 +95,9 @@ enum PKD {
         static let hairline = Color(nsColor: .separatorColor)
         static let secondary = Color(nsColor: .secondaryLabelColor)
         static let tertiary = Color(nsColor: .tertiaryLabelColor)
+
+        /// 扁平控件的填充：深色下比背景亮、浅色下比背景暗，
+        /// 与 Mirage 参考界面的按钮一样是「相对背景轻微偏移」而不是固定灰。
+        static let controlFill = Color.primary.opacity(0.09)
     }
 }

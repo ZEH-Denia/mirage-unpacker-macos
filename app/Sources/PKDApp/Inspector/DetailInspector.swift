@@ -102,7 +102,8 @@ struct DetailInspector: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .controlSize(.regular)
+            .frame(height: 30)
             .disabled(!item.isExtractable)
 
             HStack(spacing: PKD.Space.xs) {

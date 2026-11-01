@@ -52,7 +52,7 @@ struct WallpaperGridView: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.callout)
+                .font(.caption)
                 .foregroundStyle(.secondary)
 
             TextField("搜索标题或 ID", text: $model.searchText)
@@ -70,10 +70,13 @@ struct WallpaperGridView: View {
                 .help("清除搜索")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(PKD.Palette.card, in: Capsule())
-        .overlay(Capsule().strokeBorder(PKD.Palette.hairline, lineWidth: 1))
+        .padding(.horizontal, PKD.Control.hPadding)
+        .frame(height: PKD.Control.fieldHeight)
+        // 与筛选栏按钮同一套形状：圆角矩形而不是胶囊，半径略大一级
+        .background(
+            PKD.Palette.controlFill,
+            in: RoundedRectangle(cornerRadius: PKD.Control.fieldRadius, style: .continuous)
+        )
     }
 
     // MARK: - 网格
