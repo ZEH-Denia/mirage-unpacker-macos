@@ -41,9 +41,9 @@ Mirage 订阅下载
 
 [![Release](https://img.shields.io/github/v/release/ZEH-Denia/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest)
 
-不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon）。从后续版本起，发布资产使用 DMG；当前 1.6.1 仍为 ZIP，解压后把 `PKD.app` 拖进 `/Applications`。后续版本双击 DMG，再把 `PKD.app` 拖到窗口中的 `Applications` 图标。
+不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon）。发布资产是 DMG：双击打开，把 `PKD.app` 拖到窗口里的 `Applications` 图标即可。
 
-后续版本资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.dmg`，同一 DMG 用于手动安装和 Sparkle 应用内更新。
+资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.dmg`，同一 DMG 用于手动安装和 Sparkle 应用内更新。
 
 首次打开：**右键点图标 → 打开**（ad-hoc 签名、未公证，属正常现象）。若仍被拦：`xattr -dr com.apple.quarantine /Applications/PKD.app`
 
