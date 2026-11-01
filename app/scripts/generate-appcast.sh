@@ -10,7 +10,7 @@ else
   VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$ROOT/dist/PKD.app/Contents/Info.plist")"
 fi
 TAG="${2:-v$VERSION}"
-ARCHIVE="$ROOT/dist/Mirage-Unpacker-for-macOS-$VERSION.zip"
+ARCHIVE="$ROOT/dist/Mirage-Unpacker-for-macOS-$VERSION.dmg"
 SPARKLE_TOOL="$ROOT/.build/artifacts/Sparkle/Sparkle/bin/generate_appcast"
 
 if [ ! -x "$SPARKLE_TOOL" ]; then
@@ -18,7 +18,7 @@ if [ ! -x "$SPARKLE_TOOL" ]; then
   exit 1
 fi
 if [ ! -f "$ARCHIVE" ]; then
-  echo "缺少发布 ZIP：$ARCHIVE，请先运行 ./scripts/package-release.sh" >&2
+  echo "缺少发布 DMG：$ARCHIVE，请先运行 ./scripts/package-release.sh" >&2
   exit 1
 fi
 
@@ -37,4 +37,4 @@ fi
 mkdir -p "$REPO/updates"
 cp "$TEMP_DIR/appcast.xml" "$REPO/updates/appcast.xml"
 echo "已生成并签名：$REPO/updates/appcast.xml"
-echo "发布 ZIP 后，将此文件推送到 main 以部署 GitHub Pages 更新 feed。"
+echo "发布 DMG 后，将此文件推送到 main 以部署 GitHub Pages 更新 feed。"

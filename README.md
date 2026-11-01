@@ -41,13 +41,11 @@ Mirage 订阅下载
 
 [![Release](https://img.shields.io/github/v/release/ZEH-Denia/mirage-unpacker-macos?label=%E4%B8%8B%E8%BD%BD&color=brightgreen)](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest)
 
-不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon，约 10 MB）。
+不想自己编译的话，直接从 [Releases](https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest) 下载最新版（Apple Silicon）。从后续版本起，发布资产使用 DMG；当前 1.6.1 仍为 ZIP，解压后把 `PKD.app` 拖进 `/Applications`。后续版本双击 DMG，再把 `PKD.app` 拖到窗口中的 `Applications` 图标。
 
-资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.zip`（GitHub 会把文件名里的空格转成点号，所以用连字符）。
+后续版本资产统一命名为 `Mirage-Unpacker-for-macOS-<版本>.dmg`，同一 DMG 用于手动安装和 Sparkle 应用内更新。
 
-1. 解压，把 `PKD.app` 拖进 `/Applications`
-2. 首次打开：**右键点图标 → 打开**（ad-hoc 签名、未公证，属正常现象）
-3. 若仍被拦：`xattr -dr com.apple.quarantine /Applications/PKD.app`
+首次打开：**右键点图标 → 打开**（ad-hoc 签名、未公证，属正常现象）。若仍被拦：`xattr -dr com.apple.quarantine /Applications/PKD.app`
 
 安装后可从菜单栏「检查更新…」更新。若应用内检查、下载或安装失败，弹窗提供「前往 GitHub 手动下载」按钮。由于应用未做 Apple 公证，首次下载的新版本仍可能出现 macOS 安全提示。
 
@@ -102,12 +100,13 @@ cp -R app/dist/PKD.app /Applications/
 每个发布版本都递增 `VERSION`，构建号默认使用相同的数字版本。打包后在生成 appcast 的同一台 Mac 上运行 Sparkle 工具，签名私钥保存在该用户的登录钥匙串中：
 
 ```bash
-(cd app && PKD_VERSION=1.6.1 PKD_BUILD=1.6.1 ./scripts/make-app.sh)
-(cd app && ./scripts/package-release.sh 1.6.1)
-(cd app && ./scripts/generate-appcast.sh 1.6.1 v1.6.1)
+VERSION=1.6.2 # 替换为本次发布版本
+(cd app && PKD_VERSION="$VERSION" PKD_BUILD="$VERSION" ./scripts/make-app.sh)
+(cd app && ./scripts/package-release.sh "$VERSION")
+(cd app && ./scripts/generate-appcast.sh "$VERSION" "v$VERSION")
 ```
 
-先把 ZIP 上传到对应 GitHub Release，再提交 `updates/appcast.xml`。GitHub Actions 会把签名 feed 部署到 GitHub Pages。EdDSA 私钥不放进仓库或 App；丢失时旧安装无法验证换钥更新，需要用户从 Releases 手动安装。
+先把 DMG 上传到对应 GitHub Release，再提交 `updates/appcast.xml`。GitHub Actions 会把签名 feed 部署到 GitHub Pages。EdDSA 私钥不放进仓库或 App；丢失时旧安装无法验证换钥更新，需要用户从 Releases 手动安装。
 
 `build-repkg.sh` 会依次尝试 `~/.dotnet/dotnet`、`/opt/homebrew/bin/dotnet`、`/usr/local/share/dotnet/dotnet`。
 若都没有，按脚本提示安装（Homebrew 或官方 `dotnet-install.sh`，后者不需要 sudo）。
@@ -329,7 +328,7 @@ app/
   Sources/PKDApp/UpdateManager.swift  Sparkle 更新器与失败时的 GitHub 回退
   Sources/PKDSelfTest/           自测可执行目标（CLT 环境无 XCTest）
   scripts/make-app.sh            组装 .app + 图标 + ad-hoc 签名
-  scripts/package-release.sh     打包 Release 资产（统一命名）
+  scripts/package-release.sh     打包可拖入 Applications 的 DMG
   scripts/generate-appcast.sh    使用本机 Keychain 私钥签名更新并生成 appcast
   scripts/verify.sh              回归验证
 updates/                         GitHub Pages 上的 Sparkle 更新 feed
