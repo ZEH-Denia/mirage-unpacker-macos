@@ -82,7 +82,7 @@ struct DetailInspector: View {
         var parts = [item.typeLabel]
         if item.pkgSize > 0 { parts.append(item.sizeText) }
         if !item.contentRating.isEmpty { parts.append(item.contentRating) }
-        if model.xrayFlags[item.id] == true { parts.append("含 X-Ray") }
+        if case .loaded(true) = model.xrayState(for: item.id) { parts.append("含 X-Ray") }
         return parts.joined(separator: " · ")
     }
 
@@ -142,7 +142,7 @@ struct DetailInspector: View {
                     .lineLimit(3)
             }
 
-            if model.xrayFlags[item.id] == true {
+            if case .loaded(true) = model.xrayState(for: item.id) {
                 KeyValueRow("X-Ray", vertical: true) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("解包时自动分离正常层与 X-Ray 层")

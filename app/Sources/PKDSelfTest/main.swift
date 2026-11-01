@@ -608,6 +608,77 @@ do {
     }
 }
 
+// MARK: - 素材库查询（排序 / 类型 / X-Ray）
+
+func makeItem(id: String, title: String, type: String = "scene", pkgSize: Int64 = 0, hasPkg: Bool = true) -> WallpaperItem {
+    WallpaperItem(
+        id: id,
+        folderURL: URL(fileURLWithPath: "/tmp/pkd-test/\(id)"),
+        title: title,
+        type: type,
+        previewURL: nil,
+        pkgURL: hasPkg ? URL(fileURLWithPath: "/tmp/pkd-test/\(id)/scene.pkg") : nil,
+        contentRating: "",
+        tags: [],
+        pkgSize: pkgSize,
+        issue: nil
+    )
+}
+
+section("素材库排序")
+do {
+    let items = [
+        makeItem(id: "100", title: "Banana", pkgSize: 30),
+        makeItem(id: "200", title: "apple", pkgSize: 10),
+        makeItem(id: "300", title: "apple", pkgSize: 20),
+    ]
+
+    checkEqual(LibrarySort.titleAsc.apply(to: items).map(\.id), ["200", "300", "100"], "标题 A–Z（同名按 ID 稳定）")
+    checkEqual(LibrarySort.titleDesc.apply(to: items).map(\.id), ["100", "200", "300"], "标题 Z–A（同名仍按 ID 升序稳定）")
+    checkEqual(LibrarySort.sizeDesc.apply(to: items).map(\.id), ["100", "300", "200"], "体积从大到小")
+    checkEqual(LibrarySort.sizeAsc.apply(to: items).map(\.id), ["200", "300", "100"], "体积从小到大")
+    checkEqual(LibrarySort.idAsc.apply(to: items).map(\.id), ["100", "200", "300"], "ID 升序")
+    checkEqual(LibrarySort.idDesc.apply(to: items).map(\.id), ["300", "200", "100"], "ID 降序")
+
+    // 体积相同 → 按标题 → 再按 ID
+    let sameSize = [
+        makeItem(id: "9", title: "zeta", pkgSize: 5),
+        makeItem(id: "8", title: "alpha", pkgSize: 5),
+    ]
+    checkEqual(LibrarySort.sizeDesc.apply(to: sameSize).map(\.id), ["8", "9"], "体积相同按标题兜底")
+}
+
+section("类型筛选")
+do {
+    let scene = makeItem(id: "1", title: "s", type: "scene")
+    let video = makeItem(id: "2", title: "v", type: "video")
+    let web = makeItem(id: "3", title: "w", type: "web")
+
+    check(LibraryTypeFilter.all.matches(scene) && LibraryTypeFilter.all.matches(video), "全部匹配任何类型")
+    check(LibraryTypeFilter.scene.matches(scene) && !LibraryTypeFilter.scene.matches(video), "场景只匹配 scene")
+    check(LibraryTypeFilter.video.matches(video) && !LibraryTypeFilter.video.matches(scene), "视频只匹配 video")
+    check(LibraryTypeFilter.other.matches(web) && !LibraryTypeFilter.other.matches(scene), "其他匹配未知类型")
+}
+
+section("X-Ray 筛选状态")
+do {
+    check(XRayFilter.pending.matches(.unknown), "尚未读取归入「尚未读取」")
+    check(XRayFilter.pending.matches(.scanning), "读取中也归入「尚未读取」")
+    check(!XRayFilter.noXRay.matches(.unknown), "未知不能算作「不含 X-Ray」")
+    check(!XRayFilter.noXRay.matches(.failed), "失败不能算作「不含 X-Ray」")
+    check(XRayFilter.noXRay.matches(.loaded(false)), "读取成功且不含")
+    check(XRayFilter.hasXRay.matches(.loaded(true)), "读取成功且含")
+    check(!XRayFilter.hasXRay.matches(.loaded(false)), "不含的不进「含 X-Ray」")
+    check(XRayFilter.failed.matches(.failed), "失败单独成类")
+    check(!XRayFilter.pending.matches(.failed), "失败不算「尚未读取」")
+
+    // 无 pkg 的素材不进入任何具体 X-Ray 分类
+    for filter in XRayFilter.allCases where filter != .all {
+        check(!filter.matches(.unavailable), "无包素材不进入 \(filter.label)")
+    }
+    check(XRayFilter.all.matches(.unavailable), "无包素材仍出现在「全部」里")
+}
+
 // MARK: - 结果
 
 print("")

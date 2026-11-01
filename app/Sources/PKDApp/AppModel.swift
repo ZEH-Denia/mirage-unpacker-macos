@@ -80,8 +80,53 @@ final class AppModel: ObservableObject {
     @Published var isInspectorPresented: Bool = false
     @Published var pendingConfirm: ConfirmRequest?
     @Published var alertMessage: String?
-    /// 壁纸是否含 X-Ray 效果（由后台预读包条目得出）
-    @Published var xrayFlags: [String: Bool] = [:]
+
+    // MARK: 素材库查询（排序持久化，两个筛选不跨启动保存）
+
+    /// 排序偏好写进 defaults，下次启动沿用
+    @Published var sort: LibrarySort = AppModel.loadSort() {
+        didSet {
+            guard sort != oldValue else { return }
+            UserDefaults.standard.set(sort.rawValue, forKey: Self.sortKey)
+            filteredItemsCache = nil
+        }
+    }
+
+    @Published var typeFilter: LibraryTypeFilter = .all {
+        didSet {
+            guard typeFilter != oldValue else { return }
+            filteredItemsCache = nil
+        }
+    }
+
+    @Published var xrayFilter: XRayFilter = .all {
+        didSet {
+            guard xrayFilter != oldValue else { return }
+            filteredItemsCache = nil
+        }
+    }
+
+    /// 每个素材的 X-Ray 读取状态。区分「尚未读取 / 读取中 / 成功 / 失败 / 无包」，
+    /// 不能把未知当成「不含 X-Ray」。
+    @Published private(set) var xrayStatus: [String: XRayStatus] = [:] {
+        didSet {
+            // 只有按 X-Ray 筛选时结果才会变，其余情况不必让网格重算
+            if xrayFilter != .all { filteredItemsCache = nil }
+        }
+    }
+
+    /// X-Ray 预读进度
+    @Published private(set) var xrayScanDone = 0
+    @Published private(set) var xrayScanTotal = 0
+    @Published private(set) var isScanningXRay = false
+    /// 引擎不可用时无法判定 X-Ray，界面上要解释并禁用该筛选
+    @Published private(set) var xrayEngineAvailable = true
+
+    private static let sortKey = "pkd.library.sort"
+
+    private static func loadSort() -> LibrarySort {
+        LibrarySort(rawValue: UserDefaults.standard.string(forKey: sortKey) ?? "") ?? .titleAsc
+    }
 
     // 存储清理
     @Published var storageItems: [StorageItem] = []
@@ -181,6 +226,18 @@ final class AppModel: ObservableObject {
         default:
             break
         }
+        // 冒烟钩子：pkd.debug.type=video / pkd.debug.xray=hasXRay 预设附加筛选，用于截图验收
+        let debugType = debugDefaults.string(forKey: "pkd.debug.type")
+            ?? ProcessInfo.processInfo.environment["PKD_SMOKE_TYPE"]
+        if let debugType, let filter = LibraryTypeFilter(rawValue: debugType) {
+            typeFilter = filter
+        }
+        let debugXRay = debugDefaults.string(forKey: "pkd.debug.xray")
+            ?? ProcessInfo.processInfo.environment["PKD_SMOKE_XRAY"]
+        if let debugXRay, let filter = XRayFilter(rawValue: debugXRay) {
+            xrayFilter = filter
+        }
+
         // 冒烟钩子：pkd.debug.fakeLogs=1 时灌入 300 行日志，用于检查滚动条外观
         if debugDefaults.bool(forKey: "pkd.debug.fakeLogs") {
             for index in 0..<300 {
@@ -295,6 +352,8 @@ final class AppModel: ObservableObject {
                     || item.id.contains(searchText)
                 if !matches { return false }
             }
+            guard typeFilter.matches(item) else { return false }
+            guard xrayFilter.matches(xrayState(for: item.id)) else { return false }
             switch filter {
             case .all: return true
             case .extractable: return item.isExtractable
@@ -302,8 +361,34 @@ final class AppModel: ObservableObject {
             case .extracted: return history.entry(for: item.id) != nil
             }
         }
-        filteredItemsCache = result
-        return result
+
+        let sorted = sort.apply(to: result)
+        filteredItemsCache = sorted
+        return sorted
+    }
+
+    /// 某个素材的 X-Ray 状态，未记录即「尚未读取」
+    func xrayState(for id: String) -> XRayStatus {
+        xrayStatus[id] ?? .unknown
+    }
+
+    /// 是否有「类型 / X-Ray」这类附加筛选在生效（不含搜索、侧栏导航、排序）
+    var hasExtraFilters: Bool {
+        typeFilter != .all || xrayFilter != .all
+    }
+
+    /// 只清除附加筛选，不动搜索、侧栏导航与排序，也不清多选
+    func clearExtraFilters() {
+        typeFilter = .all
+        xrayFilter = .all
+    }
+
+    /// X-Ray 分类下各项的计数，用于菜单里显示数量
+    func xrayCount(_ filter: XRayFilter) -> Int {
+        items.filter { item in
+            guard typeFilter.matches(item) else { return false }
+            return filter.matches(xrayState(for: item.id))
+        }.count
     }
 
     var selectedItems: [WallpaperItem] {
@@ -466,49 +551,74 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// 后台逐个预读包条目：填充详情页缓存，并标记哪些壁纸含 X-Ray。
+    /// 后台逐个预读包条目：填充详情缓存，并给出每个素材的 X-Ray 状态。
+    ///
+    /// 状态要能区分「尚未读取 / 读取中 / 成功 / 失败 / 无包」——
+    /// 把未知当成「不含 X-Ray」会让按 X-Ray 筛选时整批素材被误判。
     private func prefetchInfo() {
         prefetchTask?.cancel()
-        guard let engineURL = queue.engineURL else { return }
 
-        let snapshot = items
+        var statuses: [String: XRayStatus] = [:]
+        var targets: [WallpaperItem] = []
+        for item in items {
+            if item.pkgURL == nil {
+                statuses[item.id] = .unavailable   // 视频类没有 pkg，不进入 X-Ray 分类
+            } else {
+                statuses[item.id] = .unknown
+                targets.append(item)
+            }
+        }
+        xrayStatus = statuses
+        xrayScanTotal = targets.count
+        xrayScanDone = 0
+        isScanningXRay = false
+
+        guard let engineURL = queue.engineURL else {
+            // 引擎不可用：无法判定，界面上要说明原因并禁用 X-Ray 筛选
+            xrayEngineAvailable = false
+            return
+        }
+        xrayEngineAvailable = true
+        guard !targets.isEmpty else { return }
+        isScanningXRay = true
+
         prefetchTask = Task { [weak self] in
-            for item in snapshot {
+            var done = 0
+            for item in targets {
                 guard !Task.isCancelled else { return }
                 guard let pkg = item.pkgURL else { continue }
 
                 let key = pkg.path
-                if self?.infoCache[key] != nil {
-                    self?.xrayFlags[item.id] = self?.infoCache[key]?.entries.contains {
-                        $0.path.lowercased().contains("xray")
-                    }
-                    continue
-                }
+                self?.xrayStatus[item.id] = .scanning
 
-                let cached = await self?.packageInfoCache.load(for: pkg)
-                guard !Task.isCancelled else { return }
-                if let cached {
-                    self?.xrayFlags[item.id] = cached.entries.contains {
-                        $0.path.lowercased().contains("xray")
-                    }
-                    continue
-                }
-                guard self?.loadingInfo.contains(key) != true else { continue }
-                self?.loadingInfo.insert(key)
-
-                let session = RepkgSession(executable: engineURL)
-                let result = await session.info(for: pkg)
-                self?.loadingInfo.remove(key)
-                guard !Task.isCancelled else { return }
-
-                if case .success(let info) = result {
-                    self?.infoCache[key] = info
-                    self?.xrayFlags[item.id] = info.entries.contains {
-                        $0.path.lowercased().contains("xray")
+                var resolved: Bool?
+                if let info = self?.infoCache[key] {
+                    resolved = Self.containsXRay(info)
+                } else if let cached = await self?.packageInfoCache.load(for: pkg) {
+                    self?.infoCache[key] = cached
+                    resolved = Self.containsXRay(cached)
+                } else if self?.loadingInfo.contains(key) != true {
+                    self?.loadingInfo.insert(key)
+                    let session = RepkgSession(executable: engineURL)
+                    let result = await session.info(for: pkg)
+                    self?.loadingInfo.remove(key)
+                    guard !Task.isCancelled else { return }
+                    if case .success(let info) = result {
+                        self?.infoCache[key] = info
+                        resolved = Self.containsXRay(info)
                     }
                 }
+
+                done += 1
+                self?.xrayStatus[item.id] = resolved.map(XRayStatus.loaded) ?? .failed
+                self?.xrayScanDone = done
             }
+            self?.isScanningXRay = false
         }
+    }
+
+    private static func containsXRay(_ info: PkgInfo) -> Bool {
+        info.entries.contains { $0.path.lowercased().contains("xray") }
     }
 
     func loadInfo(for item: WallpaperItem) {
@@ -523,10 +633,14 @@ final class AppModel: ObservableObject {
             let result = await session.info(for: pkg)
             guard let self else { return }
             self.loadingInfo.remove(key)
-            if case .success(let info) = result {
+            switch result {
+            case .success(let info):
                 self.infoCache[key] = info
-                self.xrayFlags[item.id] = info.entries.contains {
-                    $0.path.lowercased().contains("xray")
+                self.xrayStatus[item.id] = .loaded(Self.containsXRay(info))
+            case .failure:
+                // 预读阶段失败过就保留 failed，这里只把「尚未读取」标成失败
+                if self.xrayState(for: item.id) == .unknown {
+                    self.xrayStatus[item.id] = .failed
                 }
             }
         }

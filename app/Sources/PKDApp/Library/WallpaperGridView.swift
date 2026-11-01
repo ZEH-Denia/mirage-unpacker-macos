@@ -10,6 +10,7 @@ struct WallpaperGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            LibraryFilterBar()
             grid
         }
     }
@@ -40,6 +41,8 @@ struct WallpaperGridView: View {
     private var subtitle: String {
         var parts: [String] = []
         if model.filter != .all { parts.append(model.filter.label) }
+        if model.typeFilter != .all { parts.append("类型：\(model.typeFilter.label)") }
+        if model.xrayFilter != .all { parts.append("X-Ray：\(model.xrayFilter.label)") }
         parts.append("\(model.filteredItems.count) 项")
         if !model.searchText.isEmpty { parts.append("搜索「\(model.searchText)」") }
         if !model.selection.isEmpty { parts.append("已选 \(model.selection.count)") }
@@ -90,7 +93,7 @@ struct WallpaperGridView: View {
                         item: item,
                         isSelected: model.selection.contains(item.id),
                         isExtracted: model.history.entry(for: item.id) != nil,
-                        hasXRay: model.xrayFlags[item.id] == true
+                        xrayStatus: model.xrayState(for: item.id)
                     ) {
                         handleTap(item)
                     }
@@ -136,6 +139,9 @@ struct WallpaperGridView: View {
         } description: {
             Text(emptyDescription)
         } actions: {
+            if model.hasExtraFilters {
+                Button("清除筛选") { model.clearExtraFilters() }
+            }
             Button("重新扫描") { model.refresh() }
                 .disabled(model.isScanning)
         }
@@ -144,8 +150,16 @@ struct WallpaperGridView: View {
 
     private var emptyDescription: String {
         if model.isScanning { return "正在读取素材库" }
-        if !model.searchText.isEmpty { return "没有匹配「\(model.searchText)」的壁纸" }
-        if model.filter != .all { return "当前筛选：\(model.filter.label)。切换到「全部」看看。" }
+
+        var conditions: [String] = []
+        if !model.searchText.isEmpty { conditions.append("搜索「\(model.searchText)」") }
+        if model.filter != .all { conditions.append(model.filter.label) }
+        if model.typeFilter != .all { conditions.append("类型 \(model.typeFilter.label)") }
+        if model.xrayFilter != .all { conditions.append("X-Ray \(model.xrayFilter.label)") }
+
+        if !conditions.isEmpty {
+            return "当前条件：" + conditions.joined(separator: " · ")
+        }
         return "检查素材库路径是否正确。"
     }
 

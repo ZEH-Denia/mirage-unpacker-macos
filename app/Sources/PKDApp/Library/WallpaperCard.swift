@@ -9,7 +9,7 @@ struct WallpaperCard: View {
     let item: WallpaperItem
     let isSelected: Bool
     let isExtracted: Bool
-    let hasXRay: Bool
+    let xrayStatus: XRayStatus
     let onTap: () -> Void
 
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -51,9 +51,13 @@ struct WallpaperCard: View {
             .onTapGesture(perform: onTap)
             .onHover { hover.isHovering = $0 }
             .help(item.title)
+            // 键盘可达：Tab 聚焦后用空格或回车选中，与点击走同一条路径
+            .focusable()
+            .onKeyPress(.space) { onTap(); return .handled }
+            .onKeyPress(.return) { onTap(); return .handled }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(item.title)，\(metaLine)")
-            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(accessibilityDescription)
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             .task(id: item.id) { await loadThumbnail() }
     }
 
@@ -84,6 +88,25 @@ struct WallpaperCard: View {
         if item.pkgSize > 0 { parts.append(item.sizeText) }
         if !item.isExtractable { parts.append("不可解包") }
         return parts.joined(separator: " · ")
+    }
+
+    /// VoiceOver 需要把状态读全：标题、类型、体积、能否解包、是否已解包、X-Ray 状态
+    private var accessibilityDescription: String {
+        var parts = [item.title, item.typeLabel]
+        if item.pkgSize > 0 { parts.append(item.sizeText) }
+        parts.append(item.isExtractable ? "可解包" : "不可解包")
+        parts.append(isExtracted ? "已解包" : "未解包")
+
+        switch xrayStatus {
+        case .loaded(true): parts.append("含 X-Ray")
+        case .loaded(false): parts.append("不含 X-Ray")
+        case .scanning: parts.append("X-Ray 读取中")
+        case .failed: parts.append("X-Ray 读取失败")
+        case .unknown: parts.append("X-Ray 尚未读取")
+        case .unavailable: break   // 无 pkg，不参与 X-Ray 分类
+        }
+
+        return parts.joined(separator: "，")
     }
 
     // MARK: - 缩略图
@@ -134,7 +157,7 @@ struct WallpaperCard: View {
     @ViewBuilder
     private var badges: some View {
         HStack(spacing: 4) {
-            if hasXRay {
+            if case .loaded(true) = xrayStatus {
                 tag("X-Ray", symbol: "eye", tint: .orange)
             }
             if isExtracted {
