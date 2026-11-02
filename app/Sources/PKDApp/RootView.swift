@@ -52,10 +52,11 @@ struct RootView: View {
             // 若测内容列会形成「折叠→变宽→展开→变窄」的回环
             Task { @MainActor in model.noteWindowWidth(region.representativeWidth) }
         }
-        // 窄窗放不下右栏时，详情改用弹出面板
-        .sheet(isPresented: $model.isDetailSheetPresented) {
-            DetailInspector()
-                .frame(width: 420, height: 620)
+        // 窄窗详情使用可点击遮罩，点击详情以外的区域即可返回素材库。
+        .overlay {
+            if model.isDetailSheetPresented {
+                compactDetailOverlay
+            }
         }
         .alert("确认解包", isPresented: confirmBinding) {
             Button("取消", role: .cancel) { model.pendingConfirm = nil }
@@ -74,6 +75,44 @@ struct RootView: View {
             Button("好", role: .cancel) { model.alertMessage = nil }
         } message: {
             Text(model.alertMessage ?? "")
+        }
+    }
+
+    private var compactDetailOverlay: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.45)
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.isDetailSheetPresented = false }
+                    .accessibilityHidden(true)
+
+                VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            model.isDetailSheetPresented = false
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.cancelAction)
+                        .help("关闭详情")
+                        .accessibilityLabel("关闭详情")
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+
+                    DetailInspector()
+                }
+                .frame(width: min(420, max(0, geometry.size.width - 32)),
+                       height: min(620, max(0, geometry.size.height - 32)))
+                .background(Color(nsColor: .windowBackgroundColor),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
