@@ -44,7 +44,8 @@ struct WallpaperCard: View {
             }
             .opacity(item.isExtractable ? 1 : 0.55)
             .scaleEffect(hover.isHovering ? 1.015 : 1)
-            .shadow(color: .black.opacity(hover.isHovering ? 0.18 : 0), radius: 10, y: 4)
+            .shadow(color: .black.opacity(hover.isHovering ? 0.18 : 0),
+                    radius: hover.isHovering ? 10 : 0, y: hover.isHovering ? 4 : 0)
             .zIndex(hover.isHovering ? 1 : 0)
             .animation(animation, value: hover.isHovering)
             .contentShape(RoundedRectangle(cornerRadius: PKD.Radius.card, style: .continuous))

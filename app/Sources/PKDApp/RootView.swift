@@ -45,10 +45,12 @@ struct RootView: View {
             try? await Task.sleep(nanoseconds: 900_000_000)
             openSettings()
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+        .onGeometryChange(for: WindowWidthRegion.self) {
+            WindowWidthRegion(width: $0.size.width)
+        } action: { region in
             // 必须测 NavigationSplitView 外层：折叠检查器会改变内容列宽度，
             // 若测内容列会形成「折叠→变宽→展开→变窄」的回环
-            Task { @MainActor in model.noteWindowWidth(width) }
+            Task { @MainActor in model.noteWindowWidth(region.representativeWidth) }
         }
         // 窄窗放不下右栏时，详情改用弹出面板
         .sheet(isPresented: $model.isDetailSheetPresented) {
@@ -269,6 +271,36 @@ struct RootView: View {
             }
         }
         return text
+    }
+}
+
+/// Only notify the model when a resize crosses a layout threshold. The
+/// intermediate regions preserve the existing collapse/restore hysteresis.
+private enum WindowWidthRegion: Equatable {
+    case sidebarCollapsed, sidebarGap, narrow, medium, inspectorGap, wideGap, wide
+
+    init(width: CGFloat) {
+        switch width {
+        case ...PKD.Breakpoint.sidebarCollapse: self = .sidebarCollapsed
+        case ..<PKD.Breakpoint.sidebarRestore: self = .sidebarGap
+        case ..<PKD.Breakpoint.tabMenu: self = .narrow
+        case ...PKD.Breakpoint.inspectorCollapse: self = .medium
+        case ..<PKD.Breakpoint.inspectorRestore: self = .inspectorGap
+        case ..<PKD.Breakpoint.tabIcons: self = .wideGap
+        default: self = .wide
+        }
+    }
+
+    var representativeWidth: CGFloat {
+        switch self {
+        case .sidebarCollapsed: return PKD.Breakpoint.sidebarCollapse
+        case .sidebarGap: return PKD.Breakpoint.sidebarCollapse + 1
+        case .narrow: return PKD.Breakpoint.sidebarRestore
+        case .medium: return PKD.Breakpoint.tabMenu
+        case .inspectorGap: return PKD.Breakpoint.inspectorCollapse + 1
+        case .wideGap: return PKD.Breakpoint.inspectorRestore
+        case .wide: return PKD.Breakpoint.tabIcons
+        }
     }
 }
 
