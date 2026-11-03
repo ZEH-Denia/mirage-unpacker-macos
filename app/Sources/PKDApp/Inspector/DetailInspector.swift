@@ -135,8 +135,11 @@ struct DetailInspector: View {
                     .textSelection(.enabled)
             }
 
-            KeyValueRow("输出目录", vertical: true) {
-                Text(OutputLayout.outputDirectory(for: item, root: model.settings.outputRoot).path)
+            KeyValueRow(model.settings.exportImagesOnly ? "图片导出目录" : "输出目录", vertical: true) {
+                let root = model.settings.exportImagesOnly
+                    ? model.settings.imageExportRoot
+                    : model.settings.outputRoot
+                Text(OutputLayout.outputDirectory(for: item, root: root).path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)

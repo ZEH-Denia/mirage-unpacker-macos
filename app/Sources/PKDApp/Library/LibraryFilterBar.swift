@@ -1,7 +1,7 @@
 import SwiftUI
 import PKDKit
 
-/// 素材库筛选栏：排序、类型、X-Ray、网格密度、清除筛选。
+/// 素材库工具栏：排序和网格密度。
 ///
 /// 控件形状对齐 Mirage 参考界面：统一 26pt 高、6pt 圆角、扁平填充、无边框无下拉箭头。
 /// 单独一行而不是塞进页头，是因为页头右侧已经被搜索框占满。
@@ -12,18 +12,8 @@ struct LibraryFilterBar: View {
     var body: some View {
         HStack(spacing: PKD.Space.xs) {
             sortMenu
-            typeMenu
-            xrayMenu
-
-            if model.isScanningXRay {
-                xrayProgress
-            }
 
             Spacer(minLength: PKD.Space.xs)
-
-            if model.hasExtraFilters {
-                clearButton
-            }
 
             densityMenu
         }
@@ -37,7 +27,9 @@ struct LibraryFilterBar: View {
         Menu {
             ForEach(LibrarySort.allCases) { sort in
                 Button {
-                    model.sort = sort
+                    withAnimation(.snappy(duration: 0.24)) {
+                        model.sort = sort
+                    }
                 } label: {
                     if model.sort == sort {
                         Label(sort.label, systemImage: "checkmark")
@@ -54,101 +46,6 @@ struct LibraryFilterBar: View {
         .fixedSize()
         .modifier(ChipSurface())
         .help("排序方式（会记住，下次启动沿用）")
-    }
-
-    // MARK: - 类型
-
-    private var typeMenu: some View {
-        Menu {
-            ForEach(LibraryTypeFilter.allCases) { filter in
-                Button {
-                    model.typeFilter = filter
-                } label: {
-                    if model.typeFilter == filter {
-                        Label(filter.label, systemImage: "checkmark")
-                    } else {
-                        Text(filter.label)
-                    }
-                }
-            }
-        } label: {
-            chip(icon: "square.stack.3d.up", text: "类型：\(model.typeFilter.label)")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .modifier(ChipSurface())
-        .help("按素材类型筛选，与搜索和侧栏条件叠加")
-    }
-
-    // MARK: - X-Ray
-
-    private var xrayMenu: some View {
-        Menu {
-            ForEach(XRayFilter.allCases) { filter in
-                Button {
-                    model.xrayFilter = filter
-                } label: {
-                    if model.xrayFilter == filter {
-                        Label("\(filter.label)（\(model.xrayCount(filter))）", systemImage: "checkmark")
-                    } else {
-                        Text("\(filter.label)（\(model.xrayCount(filter))）")
-                    }
-                }
-            }
-        } label: {
-            chip(
-                icon: "eye",
-                text: model.xrayEngineAvailable ? "X-Ray：\(model.xrayFilter.label)" : "X-Ray：不可用"
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .modifier(ChipSurface())
-        .disabled(!model.xrayEngineAvailable)
-        .help(xrayHelp)
-    }
-
-    private var xrayHelp: String {
-        if !model.xrayEngineAvailable {
-            return "找不到 repkg 引擎，无法判定 X-Ray 状态；补齐引擎后可用"
-        }
-        if model.isScanningXRay {
-            return "正在后台读取包结构，完成后可精确筛选"
-        }
-        return "按是否含 X-Ray 筛选；无 pkg 的素材不参与该分类"
-    }
-
-    private var xrayProgress: some View {
-        HStack(spacing: 6) {
-            ProgressView(
-                value: Double(model.xrayScanDone),
-                total: Double(max(model.xrayScanTotal, 1))
-            )
-            .progressViewStyle(.linear)
-            .frame(width: 90)
-
-            Text("\(model.xrayScanDone)/\(model.xrayScanTotal)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .controlSize(.small)
-        .help("正在读取 X-Ray 状态")
-    }
-
-    // MARK: - 清除筛选
-
-    private var clearButton: some View {
-        Button("清除筛选") {
-            model.clearExtraFilters()
-        }
-        .buttonStyle(.plain)
-        .font(.caption.weight(.medium))
-        .foregroundStyle(Color.accentColor)
-        .padding(.horizontal, PKD.Control.hPadding)
-        .frame(height: PKD.Control.height)
-        .help("只清除类型与 X-Ray 条件，不动搜索、侧栏与排序")
     }
 
     // MARK: - 密度

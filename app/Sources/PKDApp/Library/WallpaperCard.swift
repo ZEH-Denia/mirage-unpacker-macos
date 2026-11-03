@@ -13,6 +13,7 @@ struct WallpaperCard: View {
     let onTap: () -> Void
 
     @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @StateObject private var thumbnail = CardThumbnail()
     @StateObject private var hover = HoverState()
 
@@ -59,7 +60,8 @@ struct WallpaperCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityDescription)
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-            .task(id: item.id) { await loadThumbnail() }
+            .accessibilityAction(.default) { onTap() }
+            .task(id: "\(item.id):\(appearance.showThumbnails)") { await loadThumbnail() }
     }
 
     private var caption: some View {
@@ -81,7 +83,7 @@ struct WallpaperCard: View {
     }
 
     private var animation: Animation? {
-        appearance.reducesMotion(system: false) ? nil : .easeOut(duration: 0.12)
+        appearance.reducesMotion(system: accessibilityReduceMotion) ? nil : .easeOut(duration: 0.12)
     }
 
     private var metaLine: String {

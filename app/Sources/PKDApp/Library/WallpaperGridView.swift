@@ -23,9 +23,20 @@ struct WallpaperGridView: View {
                 Text("素材库")
                     .font(appearance.titleFont.weight(.bold))
 
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: PKD.Space.xs) {
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    if hiddenSelectionCount > 0 {
+                        Button("清除隐藏选择") {
+                            let visibleIDs = Set(model.filteredItems.map(\.id))
+                            model.selection.subtract(visibleIDs)
+                        }
+                        .font(.caption)
+                        .help("取消选择当前搜索结果中隐藏的素材")
+                    }
+                }
             }
 
             Spacer(minLength: PKD.Space.m)
@@ -41,12 +52,15 @@ struct WallpaperGridView: View {
     private var subtitle: String {
         var parts: [String] = []
         if model.filter != .all { parts.append(model.filter.label) }
-        if model.typeFilter != .all { parts.append("类型：\(model.typeFilter.label)") }
-        if model.xrayFilter != .all { parts.append("X-Ray：\(model.xrayFilter.label)") }
         parts.append("\(model.filteredItems.count) 项")
         if !model.searchText.isEmpty { parts.append("搜索「\(model.searchText)」") }
         if !model.selection.isEmpty { parts.append("已选 \(model.selection.count)") }
+        if hiddenSelectionCount > 0 { parts.append("其中 \(hiddenSelectionCount) 项被隐藏") }
         return parts.joined(separator: " · ")
+    }
+
+    private var hiddenSelectionCount: Int {
+        model.selection.subtracting(Set(model.filteredItems.map(\.id))).count
     }
 
     private var searchField: some View {
@@ -123,6 +137,9 @@ struct WallpaperGridView: View {
                     }
                 }
             }
+            .animation(.snappy(duration: 0.24), value: model.sort)
+            .animation(.snappy(duration: 0.2), value: appearance.density)
+            .animation(.snappy(duration: 0.2), value: model.isInspectorPresented)
             .padding(.horizontal, PKD.Layout.pageInset)
             .padding(.bottom, PKD.Space.l)
         }
@@ -142,9 +159,6 @@ struct WallpaperGridView: View {
         } description: {
             Text(emptyDescription)
         } actions: {
-            if model.hasExtraFilters {
-                Button("清除筛选") { model.clearExtraFilters() }
-            }
             Button("重新扫描") { model.refresh() }
                 .disabled(model.isScanning)
         }
@@ -157,13 +171,11 @@ struct WallpaperGridView: View {
         var conditions: [String] = []
         if !model.searchText.isEmpty { conditions.append("搜索「\(model.searchText)」") }
         if model.filter != .all { conditions.append(model.filter.label) }
-        if model.typeFilter != .all { conditions.append("类型 \(model.typeFilter.label)") }
-        if model.xrayFilter != .all { conditions.append("X-Ray \(model.xrayFilter.label)") }
 
         if !conditions.isEmpty {
             return "当前条件：" + conditions.joined(separator: " · ")
         }
-        return "检查素材库路径是否正确。"
+        return "未找到场景壁纸，请检查素材库路径。"
     }
 
     // MARK: - 交互

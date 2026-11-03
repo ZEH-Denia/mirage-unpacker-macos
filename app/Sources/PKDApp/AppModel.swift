@@ -81,7 +81,7 @@ final class AppModel: ObservableObject {
     @Published var pendingConfirm: ConfirmRequest?
     @Published var alertMessage: String?
 
-    // MARK: 素材库查询（排序持久化，两个筛选不跨启动保存）
+    // MARK: 素材库查询
 
     /// 排序偏好写进 defaults，下次启动沿用
     @Published var sort: LibrarySort = AppModel.loadSort() {
@@ -92,35 +92,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    @Published var typeFilter: LibraryTypeFilter = .all {
-        didSet {
-            guard typeFilter != oldValue else { return }
-            filteredItemsCache = nil
-        }
-    }
-
-    @Published var xrayFilter: XRayFilter = .all {
-        didSet {
-            guard xrayFilter != oldValue else { return }
-            filteredItemsCache = nil
-        }
-    }
-
-    /// 每个素材的 X-Ray 读取状态。区分「尚未读取 / 读取中 / 成功 / 失败 / 无包」，
-    /// 不能把未知当成「不含 X-Ray」。
-    @Published private(set) var xrayStatus: [String: XRayStatus] = [:] {
-        didSet {
-            // 只有按 X-Ray 筛选时结果才会变，其余情况不必让网格重算
-            if xrayFilter != .all { filteredItemsCache = nil }
-        }
-    }
-
-    /// X-Ray 预读进度
-    @Published private(set) var xrayScanDone = 0
-    @Published private(set) var xrayScanTotal = 0
-    @Published private(set) var isScanningXRay = false
-    /// 引擎不可用时无法判定 X-Ray，界面上要解释并禁用该筛选
-    @Published private(set) var xrayEngineAvailable = true
+    /// 卡片和详情中显示的 X-Ray 读取状态。
+    @Published private(set) var xrayStatus: [String: XRayStatus] = [:]
 
     private static let sortKey = "pkd.library.sort"
 
@@ -226,18 +199,6 @@ final class AppModel: ObservableObject {
         default:
             break
         }
-        // 冒烟钩子：pkd.debug.type=video / pkd.debug.xray=hasXRay 预设附加筛选，用于截图验收
-        let debugType = debugDefaults.string(forKey: "pkd.debug.type")
-            ?? ProcessInfo.processInfo.environment["PKD_SMOKE_TYPE"]
-        if let debugType, let filter = LibraryTypeFilter(rawValue: debugType) {
-            typeFilter = filter
-        }
-        let debugXRay = debugDefaults.string(forKey: "pkd.debug.xray")
-            ?? ProcessInfo.processInfo.environment["PKD_SMOKE_XRAY"]
-        if let debugXRay, let filter = XRayFilter(rawValue: debugXRay) {
-            xrayFilter = filter
-        }
-
         // 冒烟钩子：pkd.debug.fakeLogs=1 时灌入 300 行日志，用于检查滚动条外观
         if debugDefaults.bool(forKey: "pkd.debug.fakeLogs") {
             for index in 0..<300 {
@@ -352,8 +313,6 @@ final class AppModel: ObservableObject {
                     || item.id.contains(searchText)
                 if !matches { return false }
             }
-            guard typeFilter.matches(item) else { return false }
-            guard xrayFilter.matches(xrayState(for: item.id)) else { return false }
             switch filter {
             case .all: return true
             case .extractable: return item.isExtractable
@@ -370,25 +329,6 @@ final class AppModel: ObservableObject {
     /// 某个素材的 X-Ray 状态，未记录即「尚未读取」
     func xrayState(for id: String) -> XRayStatus {
         xrayStatus[id] ?? .unknown
-    }
-
-    /// 是否有「类型 / X-Ray」这类附加筛选在生效（不含搜索、侧栏导航、排序）
-    var hasExtraFilters: Bool {
-        typeFilter != .all || xrayFilter != .all
-    }
-
-    /// 只清除附加筛选，不动搜索、侧栏导航与排序，也不清多选
-    func clearExtraFilters() {
-        typeFilter = .all
-        xrayFilter = .all
-    }
-
-    /// X-Ray 分类下各项的计数，用于菜单里显示数量
-    func xrayCount(_ filter: XRayFilter) -> Int {
-        items.filter { item in
-            guard typeFilter.matches(item) else { return false }
-            return filter.matches(xrayState(for: item.id))
-        }.count
     }
 
     var selectedItems: [WallpaperItem] {
@@ -530,7 +470,7 @@ final class AppModel: ObservableObject {
 
         Task { [weak self] in
             let scanned = await Task.detached(priority: .userInitiated) {
-                LibraryScanner().scan(root: root)
+                LibraryScanner().scan(root: root).filter { LibraryTypeFilter.scene.matches($0) }
             }.value
 
             guard let self else { return }
@@ -553,8 +493,7 @@ final class AppModel: ObservableObject {
 
     /// 后台逐个预读包条目：填充详情缓存，并给出每个素材的 X-Ray 状态。
     ///
-    /// 状态要能区分「尚未读取 / 读取中 / 成功 / 失败 / 无包」——
-    /// 把未知当成「不含 X-Ray」会让按 X-Ray 筛选时整批素材被误判。
+    /// 保留读取状态，以便卡片与详情正确显示 X-Ray 信息。
     private func prefetchInfo() {
         prefetchTask?.cancel()
 
@@ -562,28 +501,17 @@ final class AppModel: ObservableObject {
         var targets: [WallpaperItem] = []
         for item in items {
             if item.pkgURL == nil {
-                statuses[item.id] = .unavailable   // 视频类没有 pkg，不进入 X-Ray 分类
+                statuses[item.id] = .unavailable
             } else {
                 statuses[item.id] = .unknown
                 targets.append(item)
             }
         }
         xrayStatus = statuses
-        xrayScanTotal = targets.count
-        xrayScanDone = 0
-        isScanningXRay = false
-
-        guard let engineURL = queue.engineURL else {
-            // 引擎不可用：无法判定，界面上要说明原因并禁用 X-Ray 筛选
-            xrayEngineAvailable = false
-            return
-        }
-        xrayEngineAvailable = true
+        guard let engineURL = queue.engineURL else { return }
         guard !targets.isEmpty else { return }
-        isScanningXRay = true
 
         prefetchTask = Task { [weak self] in
-            var done = 0
             for item in targets {
                 guard !Task.isCancelled else { return }
                 guard let pkg = item.pkgURL else { continue }
@@ -609,11 +537,8 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                done += 1
                 self?.xrayStatus[item.id] = resolved.map(XRayStatus.loaded) ?? .failed
-                self?.xrayScanDone = done
             }
-            self?.isScanningXRay = false
         }
     }
 
