@@ -19,6 +19,8 @@ public final class JobQueue: ObservableObject {
 
     public let log: LogSink
     private var ticker: Timer?
+    private enum PreviewResult { case rendered, notNeeded, failed(String) }
+    private var previewTasks: [UUID: Task<PreviewResult, Never>] = [:]
 
     public init(engineURL: URL?, log: LogSink) {
         self.engineURL = engineURL
@@ -69,6 +71,7 @@ public final class JobQueue: ObservableObject {
             return
         }
         job.state = .cancelling
+        previewTasks[jobID]?.cancel()
         let session = job.session
         Task {
             await session?.cancel()
@@ -184,6 +187,13 @@ public final class JobQueue: ObservableObject {
                 logSink.append(jobID: jobID, text: "读取包信息失败：\(error.message)", kind: .warning)
             }
         }
+        let mayContainModel = job.imageExportDestination != nil && (expected?.entries.contains { $0.path.lowercased().hasSuffix(".mdl") } ?? false)
+        var extractionRequest = job.request
+        if mayContainModel {
+            extractionRequest.flatten = false
+            extractionRequest.convertTextures = true
+            logSink.append(jobID: jobID, text: "发现模型资源，将检查场景引用并尝试生成静态预览", kind: .marker)
+        }
 
         guard job.state != .cancelling else {
             job.state = .cancelled
@@ -199,7 +209,7 @@ public final class JobQueue: ObservableObject {
         var attempt = 0
         while true {
             let report = await session.extract(
-                job.request,
+                extractionRequest,
                 expected: expected,
                 onEvent: { event in
                     logSink.append(jobID: jobID, text: JobQueue.describe(event), kind: JobQueue.kind(for: event))
@@ -222,7 +232,7 @@ public final class JobQueue: ObservableObject {
             job.report = report
             job.progress = box.latest
             job.warnings.append(contentsOf: report.warnings)
-            job.endedAt = Date()
+            var previewIncomplete = false
 
             // X-Ray 图层分离：识别正常层 / X-Ray 层并给导出的图片加上可读后缀
             if report.verdict.isSuccess {
@@ -241,6 +251,36 @@ public final class JobQueue: ObservableObject {
             // 仅导出图片模式：把图片复制到目标目录，随后删除临时解包目录
             if let destination = job.imageExportDestination {
                 if report.verdict.isSuccess {
+                    if mayContainModel {
+                        logSink.append(jobID: jobID, text: "正在渲染实验性静态预览…", kind: .marker)
+                        let workDirectory = job.request.outputDirectory
+                        let task = Task.detached(priority: .userInitiated) { () -> PreviewResult in
+                            do { return try ExperimentalPuppetPreview.render(in: workDirectory) ? .rendered : .notNeeded }
+                            catch { return .failed(error.localizedDescription) }
+                        }
+                        previewTasks[jobID] = task
+                        let result = await task.value
+                        previewTasks[jobID] = nil
+                        if job.state == .cancelling {
+                            job.state = .cancelled
+                            job.endedAt = Date()
+                            logSink.append(jobID: jobID, text: "场景预览已取消", kind: .marker)
+                            logSink.close(jobID: jobID)
+                            onFinished?(job)
+                            return
+                        }
+                        let warning: String?
+                        switch result {
+                        case .rendered: warning = "场景预览为实验性静态姿态，其他图层、时钟、天气及动态效果可能未包含"
+                        case .notNeeded: warning = nil
+                        case .failed(let error): warning = "实验性场景预览未完成：\(error)；已保留可导出的素材"
+                        }
+                        if let warning {
+                            previewIncomplete = true
+                            job.warnings.append(warning)
+                            logSink.append(jobID: jobID, text: warning, kind: .warning)
+                        }
+                    }
                     let folderName = OutputLayout.folderName(for: job.item)
                     let result = ImageExporter.export(
                         from: job.request.outputDirectory,
@@ -277,7 +317,9 @@ public final class JobQueue: ObservableObject {
 
             switch report.verdict {
             case .success:
-                if job.imageExportDestination != nil && (job.exportedImages?.isEmpty ?? true) {
+                if previewIncomplete {
+                    job.state = .partial(warningCount: max(1, job.warnings.count))
+                } else if job.imageExportDestination != nil && (job.exportedImages?.isEmpty ?? true) {
                     job.state = .partial(warningCount: max(1, job.warnings.count))
                 } else if job.imageExportDestination != nil,
                           let exported = job.exportedImages,
@@ -297,6 +339,7 @@ public final class JobQueue: ObservableObject {
                 job.state = .failed(failure.message)
             }
 
+            job.endedAt = Date()
             logSink.append(
                 jobID: jobID,
                 text: "结束：\(job.state.label) · 产物 \(report.outputFileCount) 个文件 · \(job.durationText)",

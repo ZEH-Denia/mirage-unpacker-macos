@@ -1,5 +1,6 @@
 import Foundation
 import PKDKit
+import ImageIO
 
 // 轻量断言框架：不依赖 XCTest（CLT 环境里没有 XCTest.framework）
 var failures = 0
@@ -50,6 +51,50 @@ if let flagIndex = CommandLine.arguments.firstIndex(of: "--trash"),
 }
 
 // MARK: - 队列集成测试入口（pkd-selftest --queue <pkg>）
+
+if let index = CommandLine.arguments.firstIndex(of: "--puppet-queue"), index + 1 < CommandLine.arguments.count {
+    await runPuppetQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]), expectPreview: true)
+    print(failures == 0 ? "✅ puppet 队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
+    exit(failures == 0 ? 0 : 1)
+}
+if let index = CommandLine.arguments.firstIndex(of: "--puppet-fallback"), index + 1 < CommandLine.arguments.count {
+    await runPuppetQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]), expectPreview: false)
+    print(failures == 0 ? "✅ puppet 队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
+    exit(failures == 0 ? 0 : 1)
+}
+
+@MainActor
+func runPuppetQueueTest(pkg: URL, expectPreview: Bool) async {
+    guard case .success(let engine) = RepkgLocator.locate() else { check(false, "未找到引擎"); return }
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-puppet-test-\(UUID().uuidString)")
+    let suite = "pkd.puppet.test.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suite) else { check(false, "无法创建测试设置"); return }
+    defer { try? FileManager.default.removeItem(at: base); defaults.removePersistentDomain(forName: suite) }
+    let settings = SettingsStore(defaults: defaults)
+    settings.outputRoot = base.appendingPathComponent("extract")
+    settings.convertTextures = false
+    settings.flattenOutput = true
+    let queue = JobQueue(engineURL: engine.url, log: LogSink(logDirectory: base.appendingPathComponent("logs")))
+    let item = WallpaperItem(id: "generic-puppet-test", folderURL: pkg.deletingLastPathComponent(), title: "测试", type: "scene", previewURL: nil, pkgURL: pkg, contentRating: "", tags: [], pkgSize: 0, issue: nil)
+    guard let job = queue.enqueue(items: [item], settings: settings, imageExportDestination: base.appendingPathComponent("images")).first else { check(false, "无法创建任务"); return }
+    check(!job.request.convertTextures && job.request.flatten, "测试须覆盖用户禁用转换和平铺设置")
+    for _ in 0..<1200 {
+        if job.state.isTerminal { break }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+    }
+    if case .partial = job.state { check(true, "实验预览应标为部分完成") } else { check(false, "任务状态：\(job.state.label)") }
+    let url = base.appendingPathComponent("images/测试_generic-puppet-test/\(ExperimentalPuppetPreview.outputName)")
+    let image = CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+    if expectPreview {
+        check(image?.width == 3232 && image?.height == 1948, "应导出 3232×1948 的场景预览")
+        check(job.warnings.contains { $0.contains("可能未包含") }, "应提示未渲染效果")
+        check(job.exportedImages?.files.contains(ExperimentalPuppetPreview.outputName) == true, "结果应列出预览文件")
+    } else {
+        check(image == nil, "不支持的结构不应生成伪预览")
+        check(job.warnings.contains { $0.contains("预览未完成") }, "应提示场景不支持")
+        check(!(job.exportedImages?.files.isEmpty ?? true), "应保留可导出的素材")
+    }
+}
 
 if let flagIndex = CommandLine.arguments.firstIndex(of: "--queue"),
    flagIndex + 1 < CommandLine.arguments.count {

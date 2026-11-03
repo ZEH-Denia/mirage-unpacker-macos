@@ -122,7 +122,13 @@ public enum ImageExporter {
                     sources.append(Source(url: url, role: "X-Ray"))
                 }
             }
-            if !sources.isEmpty { return sources }
+            if !sources.isEmpty {
+                let preview = workDirectory.appendingPathComponent(ExperimentalPuppetPreview.outputName)
+                if fileManager.fileExists(atPath: preview.path) {
+                    sources.insert(Source(url: preview, role: "场景预览-实验"), at: 0)
+                }
+                return sources
+            }
         }
 
         // 2. 没有 X-Ray：取全部转换后的图片（排除预览图），保留原文件名
