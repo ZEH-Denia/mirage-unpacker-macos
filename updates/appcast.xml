@@ -4,16 +4,16 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>PKD</title>
         <item>
-            <title>1.7.4</title>
-            <pubDate>Tue, 03 Nov 2026 21:35:39 +0800</pubDate>
-            <sparkle:version>1.7.4</sparkle:version>
-            <sparkle:shortVersionString>1.7.4</sparkle:shortVersionString>
+            <title>1.7.5</title>
+            <pubDate>Wed, 04 Nov 2026 13:10:53 +0800</pubDate>
+            <sparkle:version>1.7.5</sparkle:version>
+            <sparkle:shortVersionString>1.7.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/download/v1.7.4/Mirage-Unpacker-for-macOS-1.7.4.dmg" length="11321344" type="application/octet-stream" sparkle:edSignature="sYUEcVLMyT1ONbpMyWqfG18BgNOK6BKBkaLxRygfGS9ZA2pq7SFSqWP4xkxMsuGlUECnk84ZaLHcAlpFEThoBQ=="></enclosure>
+            <enclosure url="https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/download/v1.7.5/Mirage-Unpacker-for-macOS-1.7.5.dmg" length="11325952" type="application/octet-stream" sparkle:edSignature="hn3LES9gtiS+FSqsmiBJC282fbPLzf9vEEgn7zUGLetYw7aRYgXeo6fDop7dmJ3mkdukDZ86JxGA/9PvXdWPAA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 6BLu/Xr3yj/g6XcUvbvUB+PmvRyZvYunR5QlAhrFio55wRAvpyE7XocKcnk5pedl6bGJEc8laYWq6IpMCRDTDw==
+edSignature: nz9OWsd/Q5d3yjZB8/iO7DpKV5OZd3uARW7+Z7sXQYPS89C/xWN4w35gr/CRfaTki4dcRLHD3J/WooDWgQgjAw==
 length: 1151
 -->
