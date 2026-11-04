@@ -1,13 +1,49 @@
 import SwiftUI
 import PKDKit
 
+private final class QueueDisplayOptions: ObservableObject {
+    enum Filter: String, CaseIterable {
+        case all = "全部", active = "未结束", attention = "需处理", finished = "已结束"
+        func matches(_ state: JobState) -> Bool {
+            switch self {
+            case .all: return true
+            case .active: return !state.isTerminal
+            case .attention:
+                if case .failed = state { return true }
+                if case .partial = state { return true }
+                return false
+            case .finished: return state.isTerminal
+            }
+        }
+    }
+    @Published var filter: Filter = .all
+}
+
 struct JobQueueView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
+    @StateObject private var display = QueueDisplayOptions()
+    private var visibleJobs: [ExtractJob] { model.queue.jobs.filter { display.filter.matches($0.state) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if !model.queue.jobs.isEmpty {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        filterPicker.fixedSize()
+                        Spacer()
+                        queueActions
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        filterPicker
+                        HStack { queueActions; Spacer() }
+                    }
+                }
+                .controlSize(.small)
+                .padding(.horizontal, PKD.Layout.pageInset)
+                .padding(.bottom, PKD.Space.s)
+            }
 
             if model.queue.jobs.isEmpty {
                 ContentUnavailableView {
@@ -16,9 +52,12 @@ struct JobQueueView: View {
                     Text("在主区选中壁纸，然后按 ⌘↩ 或点工具栏的解包按钮")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if visibleJobs.isEmpty {
+                ContentUnavailableView("没有符合条件的任务", systemImage: "line.3.horizontal.decrease.circle", description: Text("切换任务范围可以查看其他任务。"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(model.queue.jobs) { job in
+                    ForEach(visibleJobs) { job in
                         JobRow(job: job)
                     }
                 }
@@ -28,15 +67,30 @@ struct JobQueueView: View {
         }
     }
 
+    private var filterPicker: some View {
+        Picker("任务范围", selection: $display.filter) {
+            ForEach(QueueDisplayOptions.Filter.allCases, id: \.self) { filter in
+                Text(filter.rawValue).tag(filter)
+            }
+        }.labelsHidden().pickerStyle(.segmented).frame(maxWidth: 360)
+    }
+
+    private var queueActions: some View {
+        Group {
+            Button("重试失败项") { model.queue.retryAllFailed() }
+                .disabled(model.queue.failedCount == 0)
+            Button("清除已结束") { model.queue.removeFinished() }
+                .disabled(!model.queue.jobs.contains { $0.state.isTerminal })
+        }
+    }
+
     private var header: some View {
         PageHeader(title: "队列", subtitle: summary, titleFont: appearance.titleFont)
     }
 
     private var summary: String {
-        if model.queue.activeCount > 0 {
-            return "\(model.queue.activeCount) 个进行中 · 共 \(model.queue.jobs.count) 个任务"
-        }
-        return "共 \(model.queue.jobs.count) 个任务"
+        let snapshot = QueueSummary(states: model.queue.jobs.map(\.state))
+        return snapshot.total == 0 ? "共 0 个任务" : "共 \(snapshot.total) 项 · " + snapshot.description
     }
 }
 
@@ -88,7 +142,7 @@ struct JobRow: View {
             if let export = job.exportedImages, !export.isEmpty {
                 StatusTag(
                     symbol: "photo.stack",
-                    text: "已导出 \(export.files.count) 张：\(export.summary)",
+                    text: "新增 \(export.files.count) 张 · 跳过 \(export.skippedFiles.count) 张：\(export.summary)",
                     tint: .secondary
                 )
                 .lineLimit(1)

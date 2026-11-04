@@ -1,5 +1,16 @@
 import Foundation
 
+public enum ImageConflictPolicy: String, CaseIterable, Sendable {
+    case keepBoth, skip, overwrite
+    public var title: String {
+        switch self {
+        case .keepBoth: return "保留两份"
+        case .skip: return "跳过已有图片"
+        case .overwrite: return "覆盖已有图片"
+        }
+    }
+}
+
 public struct ImageExportResult: Sendable, Equatable {
     /// 该壁纸专属的子目录（root/<壁纸名_id>）
     public var directory: URL
@@ -7,12 +18,15 @@ public struct ImageExportResult: Sendable, Equatable {
     public var files: [String] = []
     /// 未能复制的图片及原因。
     public var failures: [String] = []
+    public var skippedFiles: [String] = []
 
-    public var isEmpty: Bool { files.isEmpty }
+    public var isEmpty: Bool { files.isEmpty && skippedFiles.isEmpty }
 
     public var summary: String {
-        guard !files.isEmpty else { return "未找到可导出的图片" }
-        return files.joined(separator: "、")
+        guard !isEmpty else { return "未找到可导出的图片" }
+        var parts = files.isEmpty ? [] : [files.joined(separator: "、")]
+        if !skippedFiles.isEmpty { parts.append("跳过 \(skippedFiles.count) 张已有图片") }
+        return parts.joined(separator: "；")
     }
 }
 
@@ -26,7 +40,7 @@ public struct ImageExportResult: Sendable, Equatable {
 ///     └── X-Ray.jpg
 /// ```
 /// 没有 X-Ray 的壁纸会保留原文件名（如 `贴图.png`）。
-/// 同一壁纸重复导出时覆盖同名文件，不产生 ` (2)` 副本。
+/// 重复导出按指定规则处理；API 默认覆盖以兼容既有调用，界面默认保留两份。
 public enum ImageExporter {
     private static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp"]
 
@@ -34,6 +48,7 @@ public enum ImageExporter {
                               to root: URL,
                               folderName: String,
                               xray: XRayLabelSummary,
+                              conflictPolicy: ImageConflictPolicy = .overwrite,
                               fileManager: FileManager = .default) -> ImageExportResult {
         let directory = root.appendingPathComponent(folderName, isDirectory: true)
         var result = ImageExportResult(directory: directory)
@@ -54,12 +69,21 @@ public enum ImageExporter {
             let baseName = "\(source.role).\(ext)"
             var fileName = baseName
             var duplicate = 2
-            while reservedNames.contains(fileName) {
+            while reservedNames.contains(fileName) || (conflictPolicy == .keepBoth && fileManager.fileExists(atPath: directory.appendingPathComponent(fileName).path)) {
                 fileName = "\(source.role) (\(duplicate)).\(ext)"
                 duplicate += 1
             }
             reservedNames.insert(fileName)
             let target = directory.appendingPathComponent(fileName)
+            if conflictPolicy == .skip, fileManager.fileExists(atPath: target.path) {
+                let values = try? target.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                if values?.isRegularFile == true, values?.isSymbolicLink != true {
+                    result.skippedFiles.append(fileName)
+                } else {
+                    result.failures.append("无法跳过非普通图片文件：\(fileName)")
+                }
+                continue
+            }
             let staging = directory.appendingPathComponent(".pkd-export-\(UUID().uuidString)")
 
             do {

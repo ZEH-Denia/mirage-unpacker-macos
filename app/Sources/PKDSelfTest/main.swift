@@ -52,6 +52,46 @@ if let flagIndex = CommandLine.arguments.firstIndex(of: "--trash"),
 
 // MARK: - 队列集成测试入口（pkd-selftest --queue <pkg>）
 
+if let index = CommandLine.arguments.firstIndex(of: "--image-conflicts"), index + 1 < CommandLine.arguments.count {
+    await runImageConflictQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+    print(failures == 0 ? "✅ 图片冲突队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
+    exit(failures == 0 ? 0 : 1)
+}
+
+@MainActor
+func runImageConflictQueueTest(pkg: URL) async {
+    guard case .success(let engine) = RepkgLocator.locate() else { check(false, "未找到引擎"); return }
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-image-policy-\(UUID().uuidString)")
+    let suite = "pkd.image.policy.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { try? FileManager.default.removeItem(at: base); defaults.removePersistentDomain(forName: suite) }
+    let settings = SettingsStore(defaults: defaults)
+    settings.outputRoot = base.appendingPathComponent("extracted")
+    let queue = JobQueue(engineURL: engine.url, log: LogSink(logDirectory: base.appendingPathComponent("logs")))
+    let item = WallpaperItem(id: "synthetic", folderURL: pkg.deletingLastPathComponent(), title: "Placeholder", type: "scene", previewURL: nil, pkgURL: pkg, contentRating: "", tags: [], pkgSize: 0, issue: nil)
+    var initialCount = 0
+    for policy in [ImageConflictPolicy.keepBoth, .skip, .overwrite, .keepBoth] {
+        settings.imageConflictPolicy = policy
+        guard let job = queue.enqueue(items: [item], settings: settings, imageExportDestination: base.appendingPathComponent("images")).first else { check(false, "无法创建任务"); return }
+        settings.imageConflictPolicy = .overwrite
+        checkEqual(job.imageConflictPolicy, policy, "入队应固定批次规则")
+        for _ in 0..<600 {
+            if job.state.isTerminal { break }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        checkEqual(job.state, .succeeded, "正常导出和全部跳过都应成功：\(job.state.label)")
+        guard let result = job.exportedImages else { check(false, "缺少图片结果"); return }
+        if initialCount == 0 {
+            initialCount = result.files.count
+            check(initialCount > 0, "首轮必须导出图片")
+        } else if policy == .skip {
+            check(result.files.isEmpty && result.skippedFiles.count == initialCount, "全部跳过应正确统计")
+        } else if policy == .keepBoth {
+            check(result.files.count == initialCount && result.files.allSatisfy { $0.contains(" (2)") }, "保留两份应使用独立名称")
+        }
+    }
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--puppet-queue"), index + 1 < CommandLine.arguments.count {
     await runPuppetQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]), expectPreview: true)
     print(failures == 0 ? "✅ puppet 队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
@@ -725,6 +765,47 @@ do {
 }
 
 // MARK: - 结果
+
+section("图片冲突规则与队列汇总")
+do {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent("pkd-conflict-test-\(UUID().uuidString)")
+    defer { try? fm.removeItem(at: base) }
+    let work = base.appendingPathComponent("work")
+    let root = base.appendingPathComponent("output")
+    try fm.createDirectory(at: work, withIntermediateDirectories: true)
+    let source = work.appendingPathComponent("image.png")
+    try Data("old".utf8).write(to: source)
+    let initial = ImageExporter.export(from: work, to: root, folderName: "example", xray: XRayLabelSummary())
+    let target = initial.directory.appendingPathComponent("image.png")
+    try Data("new".utf8).write(to: source)
+    let both = ImageExporter.export(from: work, to: root, folderName: "example", xray: XRayLabelSummary(), conflictPolicy: .keepBoth)
+    checkEqual(both.files, ["image (2).png"], "保留两份使用新文件名")
+    checkEqual(try Data(contentsOf: target), Data("old".utf8), "保留两份不能修改已有图片")
+    let third = ImageExporter.export(from: work, to: root, folderName: "example", xray: XRayLabelSummary(), conflictPolicy: .keepBoth)
+    checkEqual(third.files, ["image (3).png"], "重复保留必须避开已有副本")
+    let skipped = ImageExporter.export(from: work, to: root, folderName: "example", xray: XRayLabelSummary(), conflictPolicy: .skip)
+    check(skipped.files.isEmpty && skipped.skippedFiles == ["image.png"] && !skipped.isEmpty, "全部跳过仍是有效结果")
+    checkEqual(try Data(contentsOf: target), Data("old".utf8), "跳过不能修改已有图片")
+    let overwritten = ImageExporter.export(from: work, to: root, folderName: "example", xray: XRayLabelSummary(), conflictPolicy: .overwrite)
+    checkEqual(overwritten.files, ["image.png"], "覆盖写回原文件名")
+    checkEqual(try Data(contentsOf: target), Data("new".utf8), "覆盖应更新文件内容")
+    try fm.createDirectory(at: initial.directory.appendingPathComponent("folder.png"), withIntermediateDirectories: true)
+    try Data("asset".utf8).write(to: work.appendingPathComponent("folder.png"))
+    let invalid = ImageExporter.export(from: work, to: root, folderName: "example", xray: XRayLabelSummary(), conflictPolicy: .skip)
+    check(invalid.failures.count == 1, "同名目录不得被当作已保留图片")
+    let suite = "pkd.conflict.test.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = SettingsStore(defaults: defaults)
+    checkEqual(settings.imageConflictPolicy, .keepBoth, "新设置默认保留两份")
+    settings.imageConflictPolicy = .skip
+    checkEqual(SettingsStore(defaults: defaults).imageConflictPolicy, .skip, "规则应跨启动持久化")
+    let summary = QueueSummary(states: [.queued, .inspecting, .running, .cancelling, .succeeded, .partial(warningCount: 1), .failed("test"), .cancelled])
+    checkEqual(summary.total, 8, "汇总不得重复或漏计")
+    checkEqual(summary.active, 3, "读取、运行、取消中都算进行中")
+    check(summary.succeeded == 1 && summary.partial == 1 && summary.failed == 1 && summary.cancelled == 1, "终态应分别统计")
+} catch { check(false, "冲突规则：\(error.localizedDescription)") }
 
 section("导出结果图片索引")
 do {

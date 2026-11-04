@@ -53,9 +53,13 @@ public final class SettingsStore: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    @Published public var imageConflictPolicy: ImageConflictPolicy {
+        didSet { defaults.set(imageConflictPolicy.rawValue, forKey: "pkd.imageConflictPolicy") }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        imageConflictPolicy = defaults.string(forKey: "pkd.imageConflictPolicy").flatMap(ImageConflictPolicy.init(rawValue:)) ?? .keepBoth
 
         let home = FileManager.default.homeDirectoryForCurrentUser
 

@@ -48,6 +48,7 @@ public final class JobQueue: ObservableObject {
                 let job = ExtractJob(item: item, request: request)
                 job.temporaryOutput = temp
                 job.imageExportDestination = destination
+                job.imageConflictPolicy = settings.imageConflictPolicy
                 jobs.append(job)
                 created.append(job)
             } else {
@@ -63,6 +64,7 @@ public final class JobQueue: ObservableObject {
 
     public func cancel(_ jobID: UUID) {
         guard let job = jobs.first(where: { $0.id == jobID }), !job.state.isTerminal else { return }
+        objectWillChange.send()
         if job.state == .queued {
             job.state = .cancelled
             job.endedAt = Date()
@@ -290,7 +292,8 @@ public final class JobQueue: ObservableObject {
                         from: job.request.outputDirectory,
                         to: destination,
                         folderName: folderName,
-                        xray: job.xray
+                        xray: job.xray,
+                        conflictPolicy: job.imageConflictPolicy
                     )
                     job.exportedImages = result
 
@@ -303,7 +306,7 @@ public final class JobQueue: ObservableObject {
                     } else {
                         logSink.append(
                             jobID: jobID,
-                            text: "已导出 \(result.files.count) 张图片 → \(folderName)/：\(result.summary)",
+                            text: "新增 \(result.files.count) 张，跳过 \(result.skippedFiles.count) 张 → \(folderName)/：\(result.summary)",
                             kind: .marker
                         )
                         if !result.failures.isEmpty {

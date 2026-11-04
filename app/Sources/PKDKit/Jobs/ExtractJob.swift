@@ -85,6 +85,7 @@ public final class ExtractJob: ObservableObject, Identifiable {
     /// 「仅导出图片」模式的图片目标目录
     public var imageExportDestination: URL?
     @Published public var exportedImages: ImageExportResult?
+    public var imageConflictPolicy: ImageConflictPolicy = .keepBoth
     public var startedAt: Date?
     public var endedAt: Date?
     public var session: RepkgSession?

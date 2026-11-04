@@ -293,6 +293,7 @@ struct RootView: View {
 
         if model.settings.exportImagesOnly {
             var text = "将从 \(request.items.count) 个壁纸导出图片到：\n\(model.settings.imageExportRoot.path)"
+            text += "\n重复图片：\(model.settings.imageConflictPolicy.title)"
             var counts: [ExportAssessment.Kind: Int] = [:]
             for item in request.items {
                 let info = item.pkgURL.flatMap { model.infoCache[$0.path] }

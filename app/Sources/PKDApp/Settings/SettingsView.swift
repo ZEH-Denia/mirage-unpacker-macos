@@ -47,6 +47,13 @@ private struct SettingsForm: View {
                 .pickerStyle(.segmented)
 
                 if settings.exportImagesOnly {
+                    Picker("重复图片", selection: $settings.imageConflictPolicy) {
+                        ForEach(ImageConflictPolicy.allCases, id: \.self) { policy in
+                            Text(policy.title).tag(policy)
+                        }
+                    }
+                    Text("此规则应用于本批全部图片；完整解包使用下方的覆盖选项。")
+                        .font(.caption).foregroundStyle(.secondary)
                     pathRow("图片目录", path: settings.imageExportRoot.path) {
                         Button("选择…") { chooseImageRoot() }
                         Button("打开") {
