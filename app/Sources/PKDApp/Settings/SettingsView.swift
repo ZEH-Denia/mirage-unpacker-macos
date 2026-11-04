@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import PKDKit
+import ServiceManagement
 
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
@@ -14,6 +15,7 @@ private struct SettingsForm: View {
     @ObservedObject var settings: SettingsStore
     let model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
+    @StateObject private var loginItem = LoginItemSettings()
 
     var body: some View {
         Form {
@@ -76,6 +78,21 @@ private struct SettingsForm: View {
             }
 
             Section("行为") {
+                Toggle("登录后自动启动", isOn: Binding(
+                    get: { loginItem.status == .enabled || loginItem.status == .requiresApproval },
+                    set: { loginItem.setEnabled($0) }
+                ))
+                if loginItem.status == .requiresApproval {
+                    HStack {
+                        Text("需要在系统设置中允许后才会自动启动。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("打开登录项设置") { SMAppService.openSystemSettingsLoginItems() }
+                    }
+                }
+                if let error = loginItem.error {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
                 Toggle("完成后在 Finder 中显示", isOn: $settings.openFinderWhenDone)
                 Toggle("批量解包前确认", isOn: $settings.confirmBeforeStart)
                 Stepper(
@@ -108,6 +125,10 @@ private struct SettingsForm: View {
         }
         .formStyle(.grouped)
         .frame(width: 600, height: 700)
+        .onAppear { loginItem.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            loginItem.refresh()
+        }
     }
 
     // MARK: - 路径行
@@ -248,5 +269,24 @@ private struct SettingsForm: View {
         if panel.runModal() == .OK, let url = panel.url {
             settings.outputRoot = url
         }
+    }
+}
+
+@MainActor
+private final class LoginItemSettings: ObservableObject {
+    @Published private(set) var status = SMAppService.mainApp.status
+    @Published private(set) var error: String?
+
+    func refresh() { status = SMAppService.mainApp.status }
+
+    func setEnabled(_ enabled: Bool) {
+        error = nil
+        do {
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+        } catch {
+            self.error = "无法更改自动启动：\(error.localizedDescription)"
+        }
+        refresh()
     }
 }
