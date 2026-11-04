@@ -98,20 +98,30 @@ struct JobRow: View {
             HStack(spacing: PKD.Space.xs) {
                 if job.state.isRunning {
                     Button("取消") { model.queue.cancel(job.id) }
-                        .buttonStyle(.link)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         .font(.caption)
                 } else if case .failed = job.state {
                     Button("重试") { model.queue.retry(job.id) }
-                        .buttonStyle(.link)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         .font(.caption)
                 }
 
                 if job.report?.verdict.isSuccess == true {
+                    Button("查看图片") {
+                        model.exportGallery = ExportGalleryRequest(title: job.item.title, directory: job.exportedImages?.directory ?? job.outputDirectory)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .font(.caption)
+                    .disabled(!job.state.isTerminal)
                     // 这里只做「在 Finder 中定位」，与详情页的「打开输出」区分开
                     Button("在 Finder 中显示") {
                         model.revealInFinder(job.exportedImages?.directory ?? job.outputDirectory)
                     }
-                    .buttonStyle(.link)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .font(.caption)
                 }
 
@@ -123,6 +133,7 @@ struct JobRow: View {
             }
         }
         .padding(.vertical, PKD.Space.xxs)
+        .accessibilityElement(children: .contain)
     }
 
     private var progressRow: some View {

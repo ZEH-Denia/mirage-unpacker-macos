@@ -27,6 +27,7 @@ struct DetailInspector: View {
             VStack(alignment: .leading, spacing: PKD.Space.m) {
                 preview(item)
                 header(item)
+                exportAssessment(item)
                 actions(item)
                 Divider()
                 metadata(item)
@@ -88,6 +89,30 @@ struct DetailInspector: View {
 
     // MARK: - 操作
 
+    @ViewBuilder
+    private func exportAssessment(_ item: WallpaperItem) -> some View {
+        if let pkg = item.pkgURL {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("导出前分析").font(.caption.weight(.semibold))
+                if let info = model.infoCache[pkg.path] {
+                    let assessment = ExportAssessment(info: info)
+                    Text(assessment.title).font(.callout.weight(.medium))
+                    Text(assessment.explanation).font(.caption).foregroundStyle(.secondary)
+                } else if model.loadingInfo.contains(pkg.path) {
+                    Label("正在读取包结构…", systemImage: "hourglass")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("暂无法分析包结构，导出时会再次检查。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("重新分析") { model.loadInfo(for: item) }.controlSize(.small)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
     private func actions(_ item: WallpaperItem) -> some View {
         VStack(spacing: PKD.Space.xs) {
             Button {
@@ -108,6 +133,7 @@ struct DetailInspector: View {
 
             HStack(spacing: PKD.Space.xs) {
                 if model.history.entry(for: item.id) != nil {
+                    Button("查看图片") { model.showResults(for: item) }
                     Button {
                         model.openOutput(for: item)
                     } label: {

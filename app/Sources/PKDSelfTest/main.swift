@@ -726,6 +726,51 @@ do {
 
 // MARK: - 结果
 
+section("导出结果图片索引")
+do {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-gallery-test-\(UUID().uuidString)")
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-outside-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: outside) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let context = CGContext(data: nil, width: 12, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    let image = context.makeImage()!
+    for name in ["正常.png", "X-Ray.png", "shake_mask.png", ExperimentalPuppetPreview.outputName, "preview.jpg"] {
+        let url = root.appendingPathComponent(name)
+        let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, image, nil)
+        check(CGImageDestinationFinalize(dest), "应创建合成图片")
+    }
+    try FileManager.default.copyItem(at: root.appendingPathComponent("正常.png"), to: outside)
+    try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("outside.png"), withDestinationURL: outside)
+    try Data("broken".utf8).write(to: root.appendingPathComponent("broken.png"))
+    let images = try ExportedImage.scan(directory: root)
+    checkEqual(images.count, 4, "排除预览、损坏图片和输出目录外的软链接")
+    checkEqual(images.first?.role, "实验性场景预览", "场景预览应排在最前")
+    check(images.allSatisfy { $0.width == 12 && $0.height == 8 }, "读取原图实际尺寸")
+    check(images.contains { $0.role == "正常层" }, "识别正常层")
+    check(images.contains { $0.role == "X-Ray 层" }, "识别 X-Ray")
+    check(images.contains { $0.role == "疑似效果遮罩" }, "遮罩文件名只作疑似提示")
+    do {
+        _ = try ExportedImage.scan(directory: FileManager.default.temporaryDirectory.appendingPathComponent("nonexistent-\(UUID().uuidString)"))
+        check(false, "目录丢失时应报告错误")
+    } catch { check(true, "目录丢失时应报告错误") }
+} catch {
+    check(false, "导出结果图片索引：\(error.localizedDescription)")
+}
+
+section("导出前分析")
+do {
+    func assess(_ paths: [String]) -> ExportAssessment {
+        ExportAssessment(info: PkgInfo(packagePath: "/synthetic/scene.pkg", entries: paths.map { PkgEntryInfo(path: $0, size: 1) }))
+    }
+    checkEqual(assess([]).kind, .unknown, "空目录不能视为完整画面")
+    checkEqual(assess(["scene.json", "materials/main.tex"]).kind, .singleTexture, "单纹理只表示素材数")
+    checkEqual(assess(["materials/main.tex", "materials/mask.tex"]).kind, .layered, "多纹理需提示分层可能")
+    checkEqual(assess(["materials/main.tex", "particles/fog.json"]).kind, .layered, "单纹理有粒子仍可能不完整")
+    checkEqual(assess(["models/Body.MDL", "materials/main.tex"]).kind, .model, "模型优先于纹理数量")
+    checkEqual(assess(["models/Body.MDL", "MODELS/body.mdl"]).modelCount, 1, "不重复统计同一路径")
+}
+
 print("")
 if failures == 0 {
     print("✅ 全部通过（\(checks) 项断言）")

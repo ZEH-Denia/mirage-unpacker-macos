@@ -80,6 +80,7 @@ final class AppModel: ObservableObject {
     @Published var isInspectorPresented: Bool = false
     @Published var pendingConfirm: ConfirmRequest?
     @Published var alertMessage: String?
+    @Published var exportGallery: ExportGalleryRequest?
 
     // MARK: 素材库查询
 
@@ -116,7 +117,7 @@ final class AppModel: ObservableObject {
     let logController = LogController()
 
     private var filteredItemsCache: [WallpaperItem]?
-    private let packageInfoCache = PackageInfoCache()
+    private let packageInfoCache = PackageInfoCache(directory: DevelopmentEnvironment.root?.appendingPathComponent("Cache"))
 
     // MARK: - 窗口布局
 
@@ -144,8 +145,15 @@ final class AppModel: ObservableObject {
 
     init() {
         let settings = SettingsStore()
-        let history = HistoryStore()
-        let log = LogSink()
+        if let root = DevelopmentEnvironment.root {
+            settings.libraryRoot = root.appendingPathComponent("Library")
+            settings.outputRoot = root.appendingPathComponent("Extracted")
+            settings.imageExportRoot = root.appendingPathComponent("Images")
+            settings.exportImagesOnly = true
+            settings.openFinderWhenDone = false
+        }
+        let history = HistoryStore(fileURL: DevelopmentEnvironment.root?.appendingPathComponent("History/history.json"))
+        let log = LogSink(logDirectory: DevelopmentEnvironment.root?.appendingPathComponent("Logs"))
         self.settings = settings
         self.history = history
         self.log = log
@@ -178,7 +186,7 @@ final class AppModel: ObservableObject {
 
         bootstrapEngine()
         refresh()
-        runSmokeExtractionIfRequested()
+        if !DevelopmentEnvironment.isDevelopment { runSmokeExtractionIfRequested() }
 
         // 冒烟钩子：pkd.debug.tab=storage/queue/extracted/... 时直接落到对应导航
         let debugDefaults = UserDefaults.standard
@@ -466,7 +474,7 @@ final class AppModel: ObservableObject {
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
-        let root = settings.libraryRoot
+        let root = DevelopmentEnvironment.root?.appendingPathComponent("Library") ?? settings.libraryRoot
 
         Task { [weak self] in
             let scanned = await Task.detached(priority: .userInitiated) {
@@ -681,6 +689,14 @@ final class AppModel: ObservableObject {
 
     func revealInFinder(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func showResults(for item: WallpaperItem) {
+        guard let entry = history.validatedEntry(for: item.id) else {
+            alertMessage = "导出目录不存在，请重新导出后查看。"
+            return
+        }
+        exportGallery = ExportGalleryRequest(title: item.title, directory: URL(fileURLWithPath: entry.outputPath))
     }
 
     func openOutput(for item: WallpaperItem) {

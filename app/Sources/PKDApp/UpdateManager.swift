@@ -20,13 +20,14 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     override init() {
         super.init()
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: !DevelopmentEnvironment.isDevelopment,
             updaterDelegate: self,
             userDriverDelegate: nil
         )
     }
 
     func checkForUpdates() {
+        guard !DevelopmentEnvironment.isDevelopment else { return }
         manualCheckInProgress = true
         updaterController.updater.checkForUpdates()
     }

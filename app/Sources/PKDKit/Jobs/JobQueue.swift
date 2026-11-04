@@ -177,6 +177,10 @@ public final class JobQueue: ObservableObject {
             switch await session.info(for: pkg) {
             case .success(let info):
                 expected = info
+                if job.imageExportDestination != nil {
+                    let assessment = ExportAssessment(info: info)
+                    logSink.append(jobID: jobID, text: "导出前分析：\(assessment.title) · \(assessment.explanation)", kind: .marker)
+                }
                 logSink.append(
                     jobID: jobID,
                     text: "包内 \(info.entries.count) 个条目，"

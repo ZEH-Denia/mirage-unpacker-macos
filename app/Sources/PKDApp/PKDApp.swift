@@ -26,7 +26,7 @@ struct PKDApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("PKD 解包器") {
+        WindowGroup(DevelopmentEnvironment.isDevelopment ? "PKD 开发预览" : "PKD 解包器") {
             RootView()
                 .environmentObject(model)
                 .environmentObject(appearance)

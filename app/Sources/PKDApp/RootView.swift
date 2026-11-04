@@ -39,6 +39,9 @@ struct RootView: View {
             )
         )
         .background(WindowScrollStyler())
+        .sheet(item: $model.exportGallery) { request in
+            ExportGallery(request: request) { model.exportGallery = nil }
+        }
         .task {
             // 冒烟钩子：pkd.debug.settings=1 时自动打开设置窗口，供截图回归
             guard UserDefaults.standard.bool(forKey: "pkd.debug.settings") else { return }
@@ -290,6 +293,16 @@ struct RootView: View {
 
         if model.settings.exportImagesOnly {
             var text = "将从 \(request.items.count) 个壁纸导出图片到：\n\(model.settings.imageExportRoot.path)"
+            var counts: [ExportAssessment.Kind: Int] = [:]
+            for item in request.items {
+                let info = item.pkgURL.flatMap { model.infoCache[$0.path] }
+                let kind = info.map { ExportAssessment(info: $0).kind } ?? .unknown
+                counts[kind, default: 0] += 1
+            }
+            text += "\n\n" + ExportAssessment.Kind.allCases.compactMap { kind in
+                guard let count = counts[kind] else { return nil }
+                return "\(kind.title)：\(count) 项"
+            }.joined(separator: "\n")
             text += "\n\n解包在临时目录进行，完成后只保留图片，其余自动清理。"
             if let available = request.availableBytes {
                 text += "\n临时空间需求约 \(estimate)，当前剩余 "

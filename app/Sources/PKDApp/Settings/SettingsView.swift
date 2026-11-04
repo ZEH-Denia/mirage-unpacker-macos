@@ -82,6 +82,7 @@ private struct SettingsForm: View {
                     get: { loginItem.status == .enabled || loginItem.status == .requiresApproval },
                     set: { loginItem.setEnabled($0) }
                 ))
+                .disabled(DevelopmentEnvironment.isDevelopment)
                 if loginItem.status == .requiresApproval {
                     HStack {
                         Text("需要在系统设置中允许后才会自动启动。")

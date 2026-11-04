@@ -21,7 +21,7 @@ public final class HistoryStore: ObservableObject {
     private var saveTask: Task<Void, Never>?
 
     public init(fileURL: URL? = nil) {
-        let base = FileManager.default.homeDirectoryForCurrentUser
+        let base = fileURL?.deletingLastPathComponent() ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/PKD", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         self.fileURL = fileURL ?? base.appendingPathComponent("history.json")
