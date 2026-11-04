@@ -12,6 +12,9 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('fixture_pkg', Path(__file__).parents[1] / 'testdata/make_test_pkg.py')
 pkg = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pkg)
+render_spec = importlib.util.spec_from_file_location('render_fixture', Path(__file__).parents[1] / 'testdata/make_render_scene.py')
+render_fixture = importlib.util.module_from_spec(render_spec)
+render_spec.loader.exec_module(render_fixture)
 root = Path(sys.argv[1]).resolve()
 for i in range(12):
     folder = root / 'Library' / str(800000 + i)
@@ -28,6 +31,9 @@ for i in range(12):
     if i%4 == 2: entries += [('effects/example/effect.json', b'{}'), ('particles/example.json', b'{}')]
     if i%4 == 3: entries += [('materials/second.tex',pkg.build_tex(32,32))]
     (folder/'scene.pkg').write_bytes(pkg.build_pkg(entries))
+    if i == 11:
+        render_fixture.generate(folder)
+        (folder/'project.json').write_text(json.dumps({'title': '示例场景 12', 'type':'scene','preview':'preview.png'},ensure_ascii=False))
 for directory in ('Images','Extracted','Logs','History','Cache'):
     (root/directory).mkdir(parents=True, exist_ok=True)
 print(f'Created 12 synthetic scenes in {root}')

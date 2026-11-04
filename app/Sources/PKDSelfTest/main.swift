@@ -52,6 +52,74 @@ if let flagIndex = CommandLine.arguments.firstIndex(of: "--trash"),
 
 // MARK: - 队列集成测试入口（pkd-selftest --queue <pkg>）
 
+if let index = CommandLine.arguments.firstIndex(of: "--render-fixtures"), index + 1 < CommandLine.arguments.count {
+    await runRenderFixtureTest(directory: URL(fileURLWithPath: CommandLine.arguments[index+1]))
+    print(failures == 0 ? "✅ 多图层渲染验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
+    exit(failures == 0 ? 0 : 1)
+}
+
+@MainActor
+func runRenderFixtureTest(directory: URL) async {
+    do {
+        check(try ExperimentalPuppetPreview.render(in: directory), "应识别普通图层及两个 puppet")
+        let url = directory.appendingPathComponent(ExperimentalPuppetPreview.outputName)
+        let source = CGImageSourceCreateWithURL(url as CFURL, nil)!
+        let image = CGImageSourceCreateImageAtIndex(source, 0, nil)!
+        check(image.width == 400 && image.height == 320, "应按场景大小渲染")
+        let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width*4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = context.data!.assumingMemoryBound(to: UInt8.self)
+        func pixel(_ x: Int, _ y: Int, _ expected: [Int], _ message: String) {
+            let offset = (y*4*image.width+x*4)*4
+            check((0..<3).allSatisfy { abs(Int(pixels[offset+$0])-expected[$0]) < 6 }, message)
+        }
+        pixel(10, 10, [0,0,255], "蓝色普通图片应作为背景")
+        pixel(30, 40, [255,0,0], "红色 puppet 应按坐标放置")
+        pixel(45, 40, [127,128,0], "绿色半透明模型应覆盖红色模型")
+        pixel(75, 40, [0,128,127], "90 度旋转应覆盖到背景指定位置")
+        pixel(50, 35, [127,128,0], "共享三角边缘不得重复叠加整层透明度")
+        let sceneURL = directory.appendingPathComponent("scene.json")
+        let original = try Data(contentsOf: sceneURL)
+        defer { try? original.write(to: sceneURL) }
+        var json = try JSONSerialization.jsonObject(with: original) as! [String: Any]
+        var objects = json["objects"] as! [[String: Any]]
+        objects[1]["scale"] = "0.5 1 1"
+        json["objects"] = objects
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+        check(try ExperimentalPuppetPreview.render(in: directory), "应支持非等比缩放")
+        let scaledImage = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(url as CFURL, nil)!, 0, nil)!
+        context.draw(scaledImage, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        pixel(25, 40, [0,0,255], "缩小后的模型不应覆盖原来的外沿")
+        pixel(35, 40, [255,0,0], "缩放应保持中心位置")
+        try original.write(to: sceneURL)
+        _ = try ExperimentalPuppetPreview.render(in: directory)
+        let oldOutput = try Data(contentsOf: url)
+        objects[0]["origin"] = "50 invalid 40 0"
+        json["objects"] = objects
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+        do { _ = try ExperimentalPuppetPreview.render(in: directory); check(false, "无效坐标应拒绝") }
+        catch { check(true, "无效坐标应拒绝") }
+        checkEqual(try Data(contentsOf: url), oldOutput, "渲染失败不得破坏已有结果")
+        try original.write(to: sceneURL)
+        guard case .success(let engine) = RepkgLocator.locate() else { check(false, "缺少引擎"); return }
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-layer-queue-\(UUID().uuidString)")
+        let suite = "pkd.layer.queue.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { try? FileManager.default.removeItem(at: base); defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        let queue = JobQueue(engineURL: engine.url, log: LogSink(logDirectory: base.appendingPathComponent("logs")))
+        let item = WallpaperItem(id: "synthetic-layers", folderURL: directory, title: "Placeholder", type: "scene", previewURL: nil, pkgURL: directory.appendingPathComponent("scene.pkg"), contentRating: "", tags: [], pkgSize: 0, issue: nil)
+        let job = queue.enqueue(items: [item], settings: settings, imageExportDestination: base.appendingPathComponent("images"))[0]
+        for _ in 0..<600 {
+            if job.state.isTerminal { break }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        if case .partial = job.state { check(true, "静态预览应提示实验限制") }
+        else { check(false, "错误队列状态：\(job.state.label)") }
+        check(job.exportedImages?.files.contains(ExperimentalPuppetPreview.outputName) == true, "队列应导出组合画面")
+    } catch { check(false, "多图层渲染：\(error.localizedDescription)") }
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--image-conflicts"), index + 1 < CommandLine.arguments.count {
     await runImageConflictQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
     print(failures == 0 ? "✅ 图片冲突队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")

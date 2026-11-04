@@ -193,12 +193,12 @@ public final class JobQueue: ObservableObject {
                 logSink.append(jobID: jobID, text: "读取包信息失败：\(error.message)", kind: .warning)
             }
         }
-        let mayContainModel = job.imageExportDestination != nil && (expected?.entries.contains { $0.path.lowercased().hasSuffix(".mdl") } ?? false)
+        let needsSceneCheck = job.imageExportDestination != nil && (expected.map { [.model, .layered].contains(ExportAssessment(info: $0).kind) } ?? false)
         var extractionRequest = job.request
-        if mayContainModel {
+        if needsSceneCheck {
             extractionRequest.flatten = false
             extractionRequest.convertTextures = true
-            logSink.append(jobID: jobID, text: "发现模型资源，将检查场景引用并尝试生成静态预览", kind: .marker)
+            logSink.append(jobID: jobID, text: "发现模型或分层资源，将检查场景引用并尝试生成静态预览", kind: .marker)
         }
 
         guard job.state != .cancelling else {
@@ -257,7 +257,7 @@ public final class JobQueue: ObservableObject {
             // 仅导出图片模式：把图片复制到目标目录，随后删除临时解包目录
             if let destination = job.imageExportDestination {
                 if report.verdict.isSuccess {
-                    if mayContainModel {
+                    if needsSceneCheck {
                         logSink.append(jobID: jobID, text: "正在渲染实验性静态预览…", kind: .marker)
                         let workDirectory = job.request.outputDirectory
                         let task = Task.detached(priority: .userInitiated) { () -> PreviewResult in
@@ -277,7 +277,7 @@ public final class JobQueue: ObservableObject {
                         }
                         let warning: String?
                         switch result {
-                        case .rendered: warning = "场景预览为实验性静态姿态，其他图层、时钟、天气及动态效果可能未包含"
+                        case .rendered: warning = "场景预览为实验性静态姿态，脚本、时钟、粒子、动画与特殊效果可能未包含"
                         case .notNeeded: warning = nil
                         case .failed(let error): warning = "实验性场景预览未完成：\(error)；已保留可导出的素材"
                         }
