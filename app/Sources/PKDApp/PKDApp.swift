@@ -53,6 +53,9 @@ struct PKDApp: App {
             }
 
             CommandGroup(after: .newItem) {
+                Button("打开壁纸包…") { model.chooseLocalPackages() }
+                    .keyboardShortcut("o", modifiers: .command)
+                    .disabled(model.isImporting)
                 Button("刷新素材库") {
                     model.refreshCurrentContext()
                 }

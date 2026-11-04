@@ -11,7 +11,25 @@ struct WallpaperGridView: View {
         VStack(spacing: 0) {
             header
             LibraryFilterBar()
+            if model.filter == .recent {
+                HStack {
+                    Text("最近查看或导出的素材，按时间排列").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("清空最近使用") { model.clearRecent() }.controlSize(.small)
+                }.padding(.horizontal, PKD.Layout.pageInset).padding(.bottom, PKD.Space.xs)
+            }
             grid
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            model.importWallpapers(urls)
+            return !urls.isEmpty
+        } isTargeted: { model.isDropTargeted = $0 }
+        .overlay {
+            if model.isDropTargeted {
+                RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 3)
+                    .overlay { Text("拖入壁纸包或文件夹").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)) }
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -110,11 +128,16 @@ struct WallpaperGridView: View {
                         item: item,
                         isSelected: model.selection.contains(item.id),
                         isExtracted: model.history.entry(for: item.id) != nil,
-                        xrayStatus: model.xrayState(for: item.id)
+                        xrayStatus: model.xrayState(for: item.id),
+                        isFavorite: model.collections.favoriteIDs.contains(item.id)
                     ) {
                         handleTap(item)
                     }
                     .contextMenu {
+                        Button(model.collections.favoriteIDs.contains(item.id) ? "取消收藏" : "收藏") { model.toggleFavorite(item) }
+                        if item.id.hasPrefix("local-") {
+                            Button("移出临时素材") { model.removeImported(item) }
+                        }
                         Button("解包此项") {
                             model.selection = [item.id]
                             model.requestExtraction()
@@ -167,6 +190,8 @@ struct WallpaperGridView: View {
 
     private var emptyDescription: String {
         if model.isScanning { return "正在读取素材库" }
+        if model.searchText.isEmpty, model.filter == .favorites { return "在卡片右键菜单或详情中收藏素材，即可在这里找到。" }
+        if model.searchText.isEmpty, model.filter == .recent { return "查看或导出素材后，会在这里按访问时间显示。" }
 
         var conditions: [String] = []
         if !model.searchText.isEmpty { conditions.append("搜索「\(model.searchText)」") }
@@ -191,6 +216,7 @@ struct WallpaperGridView: View {
         let isDoubleClick = NSApp.currentEvent?.clickCount == 2
 
         if isDoubleClick, item.isExtractable {
+            model.markVisited(item)
             model.selection = [item.id]
             model.requestExtraction(for: [item])
             return
@@ -214,6 +240,7 @@ struct WallpaperGridView: View {
             model.selectionAnchor = item.id
         }
 
+        model.markVisited(item)
         revealDetail()
     }
 

@@ -116,6 +116,11 @@ struct DetailInspector: View {
     private func actions(_ item: WallpaperItem) -> some View {
         VStack(spacing: PKD.Space.xs) {
             Button {
+                model.toggleFavorite(item)
+            } label: {
+                Label(model.collections.favoriteIDs.contains(item.id) ? "已收藏" : "收藏", systemImage: model.collections.favoriteIDs.contains(item.id) ? "star.fill" : "star")
+            }.controlSize(.small)
+            Button {
                 model.requestExtraction(for: [item])
             } label: {
                 Label(
@@ -155,7 +160,11 @@ struct DetailInspector: View {
 
     private func metadata(_ item: WallpaperItem) -> some View {
         VStack(alignment: .leading, spacing: PKD.Space.xs) {
-            KeyValueRow("Workshop ID", vertical: true) {
+            if item.id.hasPrefix("local-") {
+                Text("临时导入，仅在本次会话保留；原始文件未复制或修改。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            KeyValueRow(item.id.hasPrefix("local-") ? "本地素材标识" : "Workshop ID", vertical: true) {
                 Text(item.id)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)

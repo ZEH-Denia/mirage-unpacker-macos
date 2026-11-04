@@ -10,6 +10,7 @@ struct WallpaperCard: View {
     let isSelected: Bool
     let isExtracted: Bool
     let xrayStatus: XRayStatus
+    var isFavorite = false
     let onTap: () -> Void
 
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -99,6 +100,7 @@ struct WallpaperCard: View {
         if item.pkgSize > 0 { parts.append(item.sizeText) }
         parts.append(item.isExtractable ? "可解包" : "不可解包")
         parts.append(isExtracted ? "已解包" : "未解包")
+        if isFavorite { parts.append("已收藏") }
 
         switch xrayStatus {
         case .loaded(true): parts.append("含 X-Ray")
@@ -160,6 +162,7 @@ struct WallpaperCard: View {
     @ViewBuilder
     private var badges: some View {
         HStack(spacing: 4) {
+            if isFavorite { tag(nil, symbol: "star.fill", tint: .yellow) }
             if case .loaded(true) = xrayStatus {
                 tag("X-Ray", symbol: "eye", tint: .orange)
             }

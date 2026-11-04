@@ -12,6 +12,13 @@ struct LibraryFilterBar: View {
     var body: some View {
         HStack(spacing: PKD.Space.xs) {
             sortMenu
+                .disabled(model.filter == .recent)
+            Button { model.chooseLocalPackages() } label: {
+                Label("打开壁纸包…", systemImage: "folder.badge.plus")
+            }
+            .labelStyle(.iconOnly)
+            .help("打开壁纸包或文件夹（⌘O），也可拖入素材库")
+            .disabled(model.isImporting)
 
             Spacer(minLength: PKD.Space.xs)
 

@@ -3,6 +3,7 @@ import Combine
 import AppKit
 import SwiftUI
 import PKDKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -24,6 +25,8 @@ final class AppModel: ObservableObject {
         case extractable
         case notExtracted
         case extracted
+        case favorites
+        case recent
 
         var id: String { rawValue }
 
@@ -33,6 +36,8 @@ final class AppModel: ObservableObject {
             case .extractable: return "可解包"
             case .notExtracted: return "未解包"
             case .extracted: return "已解包"
+            case .favorites: return "收藏"
+            case .recent: return "最近使用"
             }
         }
     }
@@ -81,6 +86,10 @@ final class AppModel: ObservableObject {
     @Published var pendingConfirm: ConfirmRequest?
     @Published var alertMessage: String?
     @Published var exportGallery: ExportGalleryRequest?
+    @Published var isImporting = false
+    @Published var isDropTargeted = false
+    private var importedItems: [WallpaperItem] = []
+    let collections = LibraryCollections(fileURL: DevelopmentEnvironment.root?.appendingPathComponent("History/collections.json"))
 
     // MARK: 素材库查询
 
@@ -165,6 +174,10 @@ final class AppModel: ObservableObject {
         }
 
         AppModel.current = self
+        collections.objectWillChange.sink { [weak self] _ in
+            self?.filteredItemsCache = nil
+            self?.objectWillChange.send()
+        }.store(in: &cancellables)
 
         // 把嵌套对象的变更转发给本对象，视图只需观察 AppModel
         history.objectWillChange
@@ -187,6 +200,7 @@ final class AppModel: ObservableObject {
         bootstrapEngine()
         refresh()
         if !DevelopmentEnvironment.isDevelopment { runSmokeExtractionIfRequested() }
+        runDevelopmentScenarioIfRequested()
 
         // 冒烟钩子：pkd.debug.tab=storage/queue/extracted/... 时直接落到对应导航
         let debugDefaults = UserDefaults.standard
@@ -301,6 +315,32 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// 可重复的占位场景验收入口，不接受用户素材路径。
+    private func runDevelopmentScenarioIfRequested() {
+        guard let root = DevelopmentEnvironment.root,
+              ProcessInfo.processInfo.environment["PKD_DEVELOPMENT_SCENARIO"] == "layers" else { return }
+        Task {
+            for _ in 0..<300 {
+                if !isScanning && queue.engineURL != nil { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard let item = items.first(where: { $0.id == "800011" }) else { return }
+            settings.imageConflictPolicy = .overwrite
+            performExtraction([item])
+            for _ in 0..<600 {
+                if queue.activeCount == 0 { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard let job = queue.jobs.last, let result = job.exportedImages else { return }
+            exportGallery = ExportGalleryRequest(title: item.title, directory: result.directory)
+            let report: [String: Any] = ["state": job.state.label, "files": result.files, "skipped": result.skippedFiles,
+                                       "hasPreview": FileManager.default.fileExists(atPath: result.directory.appendingPathComponent(ExperimentalPuppetPreview.outputName).path)]
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: root.appendingPathComponent("layers-validation.json"), options: .atomic)
+            }
+        }
+    }
+
     // MARK: - 派生数据
 
     /// 兼容旧调用点的读写入口：筛选就是 `.library(filter)` 这一档导航
@@ -319,6 +359,7 @@ final class AppModel: ObservableObject {
             if !searchText.isEmpty {
                 let matches = item.title.localizedCaseInsensitiveContains(searchText)
                     || item.id.contains(searchText)
+                    || (item.id.hasPrefix("local-") && item.folderURL.lastPathComponent.localizedCaseInsensitiveContains(searchText))
                 if !matches { return false }
             }
             switch filter {
@@ -326,10 +367,15 @@ final class AppModel: ObservableObject {
             case .extractable: return item.isExtractable
             case .notExtracted: return history.entry(for: item.id) == nil
             case .extracted: return history.entry(for: item.id) != nil
+            case .favorites: return collections.favoriteIDs.contains(item.id)
+            case .recent: return collections.visits[item.id] != nil
             }
         }
 
-        let sorted = sort.apply(to: result)
+        let sorted = filter == .recent ? result.sorted {
+            let lhs = collections.visits[$0.id] ?? .distantPast, rhs = collections.visits[$1.id] ?? .distantPast
+            return lhs == rhs ? $0.id < $1.id : lhs > rhs
+        } : sort.apply(to: result)
         filteredItemsCache = sorted
         return sorted
     }
@@ -381,6 +427,8 @@ final class AppModel: ObservableObject {
         case .library(.extractable): return extractableCount
         case .library(.notExtracted): return notExtractedCount
         case .library(.extracted): return extractedCount
+        case .library(.favorites): return items.filter { collections.favoriteIDs.contains($0.id) }.count
+        case .library(.recent): return items.filter { collections.visits[$0.id] != nil }.count
         case .queue: return queueBadgeCount > 0 ? queueBadgeCount : nil
         case .storage: return nil
         }
@@ -482,10 +530,12 @@ final class AppModel: ObservableObject {
             }.value
 
             guard let self else { return }
-            self.items = scanned
+            let scannedPaths = Set(scanned.compactMap { $0.pkgURL?.standardizedFileURL.resolvingSymlinksInPath().path })
+            let combined = scanned + self.importedItems.filter { !scannedPaths.contains($0.pkgURL?.standardizedFileURL.resolvingSymlinksInPath().path ?? "") }
+            self.items = combined
             self.isScanning = false
-            let scannedIDs = Set(scanned.map(\.id))
-            let scannedPackagePaths = Set(scanned.compactMap { $0.pkgURL?.path })
+            let scannedIDs = Set(combined.map(\.id))
+            let scannedPackagePaths = Set(combined.compactMap { $0.pkgURL?.path })
             self.selection = self.selection.filter { scannedIDs.contains($0) }
             self.infoCache = self.infoCache.filter { key, _ in
                 scannedPackagePaths.contains(key)
@@ -644,6 +694,7 @@ final class AppModel: ObservableObject {
         }
 
         if job.report?.verdict.isSuccess == true {
+            markVisited(job.item)
             // 仅导出图片时，历史记录指向图片目录（临时解包目录已被删除）
             let recordPath = job.exportedImages?.directory ?? job.outputDirectory
 
@@ -691,12 +742,81 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func chooseLocalPackages() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [UTType(filenameExtension: "pkg") ?? .data, .folder]
+        panel.message = "选择壁纸包或所在文件夹，临时导入后可选择导出。"
+        panel.directoryURL = DevelopmentEnvironment.root?.appendingPathComponent("Library")
+        if panel.runModal() == .OK { importWallpapers(panel.urls) }
+    }
+
+    func importWallpapers(_ urls: [URL]) {
+        if let root = DevelopmentEnvironment.root?.resolvingSymlinksInPath(), urls.contains(where: { !$0.resolvingSymlinksInPath().path.hasPrefix(root.path + "/") }) {
+            alertMessage = "开发副本仅接受占位数据目录中的文件。"
+            return
+        }
+        guard !isImporting else { alertMessage = "正在导入，请稍候再添加。"; return }
+        isImporting = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { WallpaperImporter.resolve(urls) }.value
+            var selected: Set<String> = []
+            for item in result.items {
+                if let root = DevelopmentEnvironment.root?.resolvingSymlinksInPath(), item.pkgURL?.path.hasPrefix(root.path + "/") != true {
+                    alertMessage = "开发副本不能导入指向占位目录以外的包。"
+                    continue
+                }
+                if let existing = items.first(where: { $0.pkgURL?.standardizedFileURL.resolvingSymlinksInPath().path == item.pkgURL?.path }) {
+                    selected.insert(existing.id)
+                } else {
+                    importedItems.append(item)
+                    items.append(item)
+                    selected.insert(item.id)
+                }
+            }
+            isImporting = false
+            if !selected.isEmpty {
+                nav = .library(.all)
+                searchText = ""
+                selection = selected
+                if selected.count == 1, let item = items.first(where: { selected.contains($0.id) }) { markVisited(item) }
+                prefetchInfo()
+            }
+            if !result.failures.isEmpty { alertMessage = result.failures.joined(separator: "\n") }
+        }
+    }
+
+    func removeImported(_ item: WallpaperItem) {
+        guard item.id.hasPrefix("local-") else { return }
+        importedItems.removeAll { $0.id == item.id }
+        items.removeAll { $0.id == item.id }
+        selection.remove(item.id)
+    }
+
     func showResults(for item: WallpaperItem) {
+        markVisited(item)
         guard let entry = history.validatedEntry(for: item.id) else {
             alertMessage = "导出目录不存在，请重新导出后查看。"
             return
         }
         exportGallery = ExportGalleryRequest(title: item.title, directory: URL(fileURLWithPath: entry.outputPath))
+    }
+
+    func toggleFavorite(_ item: WallpaperItem) {
+        do { try collections.toggleFavorite(item.id) }
+        catch { alertMessage = error.localizedDescription }
+    }
+
+    func markVisited(_ item: WallpaperItem) {
+        do { try collections.recordVisit(item.id) }
+        catch { alertMessage = error.localizedDescription }
+    }
+
+    func clearRecent() {
+        do { try collections.clearRecent() }
+        catch { alertMessage = error.localizedDescription }
     }
 
     func openOutput(for item: WallpaperItem) {

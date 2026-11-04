@@ -35,7 +35,7 @@ public struct LibraryScanner: @unchecked Sendable {
         }
     }
 
-    private func makeItem(folder: URL) -> WallpaperItem {
+    public func makeItem(folder: URL) -> WallpaperItem {
         let id = folder.lastPathComponent
         var issues: [ProjectIssue] = []
 

@@ -31,6 +31,8 @@ enum NavItem: Hashable, Identifiable {
         case .library(.extractable): return "shippingbox"
         case .library(.notExtracted): return "circle.dashed"
         case .library(.extracted): return "checkmark.circle"
+        case .library(.favorites): return "star"
+        case .library(.recent): return "clock"
         case .queue: return "tray.full"
         case .storage: return "externaldrive"
         }
@@ -42,6 +44,8 @@ enum NavItem: Hashable, Identifiable {
         .library(.extractable),
         .library(.notExtracted),
         .library(.extracted),
+        .library(.favorites),
+        .library(.recent),
     ]
 
     /// 是否为素材库页（主区显示网格）

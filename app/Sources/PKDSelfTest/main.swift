@@ -834,6 +834,47 @@ do {
 
 // MARK: - 结果
 
+section("收藏、最近使用与本地包导入")
+do {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent("pkd-library-test-\(UUID().uuidString)")
+    defer { try? fm.removeItem(at: base) }
+    let storeURL = base.appendingPathComponent("state/collections.json")
+    let store = LibraryCollections(fileURL: storeURL)
+    try store.toggleFavorite("example")
+    try store.recordVisit("example", at: Date(timeIntervalSince1970: 1))
+    check(LibraryCollections(fileURL: storeURL).favoriteIDs.contains("example"), "收藏必须跨实例恢复")
+    check(LibraryCollections(fileURL: storeURL).visits["example"] != nil, "最近使用必须持久化")
+    for i in 0..<101 { try store.recordVisit("item-\(i)", at: Date(timeIntervalSince1970: Double(i+2))) }
+    check(store.visits.count == 100 && store.visits["example"] == nil, "最近使用保留最新 100 项")
+    try store.clearRecent()
+    check(store.visits.isEmpty && store.favoriteIDs.contains("example"), "清空最近使用不能删除收藏")
+    try store.toggleFavorite("example")
+    check(store.favoriteIDs.isEmpty, "再次操作应取消收藏")
+    let broken = base.appendingPathComponent("broken.json")
+    try Data("broken".utf8).write(to: broken)
+    do { try LibraryCollections(fileURL: broken).toggleFavorite("example"); check(false, "损坏记录不得静默覆盖") }
+    catch { checkEqual(try Data(contentsOf: broken), Data("broken".utf8), "损坏记录必须保留") }
+
+    let folder = base.appendingPathComponent("Synthetic Scene")
+    try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+    let pkg = folder.appendingPathComponent("scene.pkg")
+    let alternate = folder.appendingPathComponent("alternate.pkg")
+    try Data("synthetic".utf8).write(to: pkg)
+    try Data("alternate".utf8).write(to: alternate)
+    try Data("{\"title\":\"Placeholder\",\"type\":\"scene\",\"preview\":\"../outside.png\"}".utf8).write(to: folder.appendingPathComponent("project.json"))
+    try Data("outside".utf8).write(to: base.appendingPathComponent("outside.png"))
+    let imported = WallpaperImporter.resolve([pkg, folder, alternate])
+    check(imported.failures.isEmpty && imported.items.count == 2, "同一个包按路径去重，明确选择的另一包应保留")
+    check(imported.items.allSatisfy { $0.previewURL == nil }, "拒绝包目录外的预览路径")
+    checkEqual(imported.items.first?.title, "Placeholder", "读取来源元数据")
+    checkEqual(imported.items.first?.id, WallpaperImporter.resolve([pkg]).items.first?.id, "导入标识必须稳定")
+    checkEqual(try Data(contentsOf: pkg), Data("synthetic".utf8), "导入不得修改来源")
+    checkEqual(try fm.contentsOfDirectory(atPath: folder.path).count, 3, "导入不得向来源目录写文件")
+    let rejected = WallpaperImporter.resolve([folder.appendingPathComponent("project.json"), URL(string: "https://example.com/scene.pkg")!])
+    check(rejected.items.isEmpty && rejected.failures.count == 2, "只接受本地包和文件夹")
+} catch { check(false, "素材管理：\(error.localizedDescription)") }
+
 section("图片冲突规则与队列汇总")
 do {
     let fm = FileManager.default
