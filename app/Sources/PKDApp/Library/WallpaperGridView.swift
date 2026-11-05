@@ -48,8 +48,7 @@ struct WallpaperGridView: View {
 
                     if hiddenSelectionCount > 0 {
                         Button("清除隐藏选择") {
-                            let visibleIDs = Set(model.filteredItems.map(\.id))
-                            model.selection.subtract(visibleIDs)
+                            model.clearHiddenSelection()
                         }
                         .font(.caption)
                         .help("取消选择当前搜索结果中隐藏的素材")

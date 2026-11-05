@@ -317,6 +317,7 @@ final class AppModel: ObservableObject {
 
     /// 可重复的占位场景验收入口，不接受用户素材路径。
     private func runDevelopmentScenarioIfRequested() {
+        if runLibraryDevelopmentScenarioIfRequested() { return }
         guard let root = DevelopmentEnvironment.root,
               ProcessInfo.processInfo.environment["PKD_DEVELOPMENT_SCENARIO"] == "layers" else { return }
         Task {
@@ -387,6 +388,10 @@ final class AppModel: ObservableObject {
 
     var selectedItems: [WallpaperItem] {
         items.filter { selection.contains($0.id) }
+    }
+
+    func clearHiddenSelection() {
+        selection.formIntersection(filteredItems.map(\.id))
     }
 
     var extractableSelection: [WallpaperItem] {

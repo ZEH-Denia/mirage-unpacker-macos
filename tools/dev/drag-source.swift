@@ -4,6 +4,7 @@ final class SourceView: NSView, NSDraggingSource {
  let result: URL
  init(file: URL, result: URL) { self.file=file; self.result=result; super.init(frame: NSRect(x:0,y:0,width:200,height:150)) }
  required init?(coder: NSCoder) { fatalError() }
+ override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
  override func draw(_ rect: NSRect) { NSColor.systemBlue.setFill(); bounds.fill(); ("Placeholder PKG" as NSString).draw(at:NSPoint(x:20,y:65),withAttributes:[.foregroundColor:NSColor.white,.font:NSFont.systemFont(ofSize:18)]) }
  override func mouseDown(with event: NSEvent) {
   let item=NSDraggingItem(pasteboardWriter:file as NSURL)
