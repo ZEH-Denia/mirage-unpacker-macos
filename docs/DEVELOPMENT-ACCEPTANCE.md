@@ -25,7 +25,7 @@
 | --- | --- |
 | `cd app && swift build --disable-sandbox` | 成功 |
 | `cd app && swift build -c release --disable-sandbox --product PKD` | 成功 |
-| `cd app && ./.build/debug/pkd-selftest` | 156 项断言通过 |
+| `cd app && ./.build/debug/pkd-selftest` | 156 项断言通过（本批次记录时的基线；收尾补充后见下节，最终 161 项） |
 | `cd app && ./.build/debug/pkd-selftest --queue ../tools/testdata/test_scene.pkg` | 10 项断言通过 |
 | `cd app && ./.build/debug/pkd-selftest --image-conflicts ../tools/testdata/test_scene.pkg` | 11 项断言通过 |
 | `cd app && ./.build/debug/pkd-selftest --render-fixtures .build/render-fixture` | 14 项断言通过 |
@@ -65,6 +65,22 @@ python3 tools/dev/verify-library.py --app 'app/.build/private-development/PKD De
 `tools/dev/ax-audit.swift <开发 PID> tree` 可直接读取开发窗口。它检查 bundle ID，拒绝控制正式应用；`main/...` 路径避免工具提示窗口改变顶层索引。原生菜单可能等待选择才返回，发生超时时应检查当前菜单，而不是重复触发。`context` 在同一进程中打开并选择菜单项。
 
 拖放辅助源支持首次点击；鼠标脚本可额外传入拖放源 PID，在同一次执行中先激活源窗口。测试时先激活目标开发窗口，避免多个开发副本互相遮挡。本轮最初发生过 CoreDrag 错误及窗口激活干扰；修正测试源和激活顺序后，最终返回 `operation=1`，并确认目标列表增加，不能仅凭 copy 返回值判定导入成功。
+
+## 1.8.0 收尾补充验证
+
+上表是本轮开发批次的记录。之后的收尾阶段新增场景组合与动画纹理检查，自测断言从 156 项增至 161 项；以下为最终状态（重建当前源码后执行）。
+
+| 命令 / 操作 | 结果 |
+| --- | --- |
+| `cd app && swift build --disable-sandbox` | 成功 |
+| `cd app && ./.build/debug/pkd-selftest` | 161 项断言通过 |
+| `cd app && ./.build/debug/pkd-selftest --render-fixtures .build/render-fixture` | 25 项断言通过（含裁剪偏移、父子变换、循环父节点、脚本绑定回退、单图层跳过条件） |
+| 共享单纹理场景 `--scene-queue <pkg> 400 320` | 5 项断言通过（纹理数少也按实际引用判断组合） |
+| `bash tools/testdata/verify_animation.sh` | PNG 编码与原始像素动画的两帧像素、时长、尺寸通过；超大 PNG 图集被拒绝并保留原 TEX |
+| 真实场景 `--scene-queue <pkg> 4096 2304` | 6 项断言通过，无纹理转换错误 |
+| 旧版与修改后引擎解包同一真实场景 | 43 个输出文件路径与 SHA-256 全部一致 |
+
+判断规则与不足见 [SCENE-RENDERING-VALIDATION.md](SCENE-RENDERING-VALIDATION.md)。真实素材仅在本机使用，未加入仓库。
 
 ## 验证边界
 

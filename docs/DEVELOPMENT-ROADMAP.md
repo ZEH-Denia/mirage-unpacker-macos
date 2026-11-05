@@ -15,7 +15,7 @@
 
 ## 备份
 
-本轮起点保存在 `/Users/zeh/Documents/Codex/Backups/pkd-20261104-170016`，包含 source.bundle、working-tree.patch 和 PKD.app。
+本轮起点保存在 `~/Documents/Codex/Backups/pkd-20261104-170016`，包含 source.bundle、working-tree.patch 和 PKD.app。
 后续重大变更前新建带时间戳的备份，保留上一份，不将个人素材加入仓库或发布包。
 
 ## 开发预览与验证
@@ -26,19 +26,19 @@
 
 当前验证：构建成功，130 项自测通过，合成队列 10 项验证通过。使用合成数据确认普通素材及模型素材的分析文案；完成占位图片导出、详情与队列的结果浏览入口、切图、尺寸更新、缩放重置和关闭/重开验证。开发窗口截图仅包含占位图。
 
-第二批开发前备份：`/Users/zeh/Documents/Codex/Backups/pkd-20261104-174043`，包含 Git 历史与完整源码工作区快照。
+第二批开发前备份：`~/Documents/Codex/Backups/pkd-20261104-174043`，包含 Git 历史与完整源码工作区快照。
 
-第三批开发前备份：`/Users/zeh/Documents/Codex/Backups/pkd-20261104-184020`。
+第三批开发前备份：`~/Documents/Codex/Backups/pkd-20261104-184020`。
 第三批增加图片冲突规则（默认保留两份）、全部跳过计数、队列状态汇总与筛选。143 项自测、10 项原合成队列验证及 11 项图片冲突队列验证通过。当前辅助功能接口返回开发副本窗口数量为 0，但进程与对应窗口的 CoreGraphics 信息存在，进程采样显示主线程空闲；尚未完成本批设置及队列筛选的交互验收，不能据此宣称界面通过。
 
 第四批已补齐第三批界面验收：开发副本中选择“跳过已有图片”，确认窗口显示规则；重复导出显示新增 0 张、跳过 3 张且成功，需处理筛选显示空状态，已结束筛选和清除按钮正常。
 
-第四批开发前备份：`/Users/zeh/Documents/Codex/Backups/pkd-20261104-205426`。新增蓝色背景、红绿两个 puppet 的合成场景；像素验证覆盖位置、前后顺序、旋转、非等比缩放及整层透明度，失败写入保护和队列输出验证通过。开发库的示例场景 12 使用该合成包。当前新开发副本的辅助功能窗口列表暂为空，尚未验证第四批在结果浏览器里的实机操作，不记作界面通过。
+第四批开发前备份：`~/Documents/Codex/Backups/pkd-20261104-205426`。新增蓝色背景、红绿两个 puppet 的合成场景；像素验证覆盖位置、前后顺序、旋转、非等比缩放及整层透明度，失败写入保护和队列输出验证通过。开发库的示例场景 12 使用该合成包。当前新开发副本的辅助功能窗口列表暂为空，尚未验证第四批在结果浏览器里的实机操作，不记作界面通过。
 
 运行渲染验证：`python3 tools/testdata/make_render_scene.py app/.build/render-fixture`，再执行 `cd app && ./.build/debug/pkd-selftest --render-fixtures .build/render-fixture`。
 格式与场景坐标参考官方说明：https://docs.wallpaperengine.io/en/scene/assets/overview.html 。实际 Wallpaper Engine 运行画面未参与本批对照；当前结果为实验性静态预览。
 
-第五批开发前备份：`/Users/zeh/Documents/Codex/Backups/pkd-20261104-235615`。新增收藏/最近使用持久化（只存 ID 和时间，最近最多 100 项）、清空最近入口、原生文件打开入口、URL 拖放入口、会话内临时导入与去重。156 项自测通过。
+第五批开发前备份：`~/Documents/Codex/Backups/pkd-20261104-235615`。新增收藏/最近使用持久化（只存 ID 和时间，最近最多 100 项）、清空最近入口、原生文件打开入口、URL 拖放入口、会话内临时导入与去重。156 项自测通过。
 
 第四批交互已补验：运行 `tools/dev/launch.sh layers`，合成包实际经过应用队列生成预览，结果浏览器显示 400×320 的组合图片，切图与关闭正常。该入口只在独立开发副本启用，不接受个人素材路径。
 
@@ -54,7 +54,7 @@
 
 Debug、Release 构建通过；156 项基础自测、10 项合成队列、11 项冲突队列、14 项合成渲染检查通过。新增可重复的双进程验证脚本，13 项收藏/最近使用/导入/选择生命周期检查通过。窄窗详情关闭和普通图片导出至结果浏览器的流程已再次操作验证。
 
-变更前备份：`/Users/zeh/Documents/Codex/Backups/pkd-20261105-042358`。已从 bundle 恢复 Git，再从 workspace.zip 恢复 87 个源码文件并逐一验证内容。
+变更前备份：`~/Documents/Codex/Backups/pkd-20261105-042358`。已从 bundle 恢复 Git，再从 workspace.zip 恢复 87 个源码文件并逐一验证内容。
 
 本轮验收细节、证据位置、复现方式与限制见 [DEVELOPMENT-ACCEPTANCE.md](DEVELOPMENT-ACCEPTANCE.md)。本轮为本地开发交付；未上传 GitHub、未发布新版本。
 
@@ -62,6 +62,6 @@ Debug、Release 构建通过；156 项基础自测、10 项合成队列、11 项
 
 用户要求将更新应用到正式版本后，功能分支已快进合入本地 `main`，版本提升到 1.8.0。已构建正式 bundle、生成并挂载验证 DMG，并安装到 `/Applications/PKD.app`，核对正式 bundle ID、版本、构建号、签名和可执行文件哈希后启动。
 
-安装前备份位于 `/Users/zeh/Documents/Codex/Backups/pkd-formal-20261105-085619`，包含源码、旧版 1.7.5 app、偏好及已有的历史/收藏元数据。156 项基础自测和基于正式 Release 二进制的 13 项隔离生命周期检查通过。安装阶段只核对进程和版本，不截取个人素材库。
+安装前备份位于 `~/Documents/Codex/Backups/pkd-formal-20261105-085619`，包含源码、旧版 1.7.5 app、偏好及已有的历史/收藏元数据。156 项基础自测和基于正式 Release 二进制的 13 项隔离生命周期检查通过。安装阶段只核对进程和版本，不截取个人素材库。
 
 安装包为 `app/dist/Mirage-Unpacker-for-macOS-1.8.0.dmg`。GitHub Release 与 appcast 尚未发布 1.8.0。
