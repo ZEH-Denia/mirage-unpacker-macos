@@ -105,7 +105,7 @@ cp -R app/dist/PKD.app /Applications/
 每个发布版本都递增 `VERSION`，构建号默认使用相同的数字版本。打包后在生成 appcast 的同一台 Mac 上运行 Sparkle 工具，签名私钥保存在该用户的登录钥匙串中：
 
 ```bash
-VERSION=1.6.2 # 替换为本次发布版本
+VERSION=1.8.0 # 替换为本次发布版本
 (cd app && PKD_VERSION="$VERSION" PKD_BUILD="$VERSION" ./scripts/make-app.sh)
 (cd app && ./scripts/package-release.sh "$VERSION")
 (cd app && ./scripts/generate-appcast.sh "$VERSION" "v$VERSION")

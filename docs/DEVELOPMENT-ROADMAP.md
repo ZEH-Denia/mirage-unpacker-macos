@@ -57,3 +57,11 @@ Debug、Release 构建通过；156 项基础自测、10 项合成队列、11 项
 变更前备份：`/Users/zeh/Documents/Codex/Backups/pkd-20261105-042358`。已从 bundle 恢复 Git，再从 workspace.zip 恢复 87 个源码文件并逐一验证内容。
 
 本轮验收细节、证据位置、复现方式与限制见 [DEVELOPMENT-ACCEPTANCE.md](DEVELOPMENT-ACCEPTANCE.md)。本轮为本地开发交付；未上传 GitHub、未发布新版本。
+
+## 正式版本集成（2026-11-05）
+
+用户要求将更新应用到正式版本后，功能分支已快进合入本地 `main`，版本提升到 1.8.0。已构建正式 bundle、生成并挂载验证 DMG，并安装到 `/Applications/PKD.app`，核对正式 bundle ID、版本、构建号、签名和可执行文件哈希后启动。
+
+安装前备份位于 `/Users/zeh/Documents/Codex/Backups/pkd-formal-20261105-085619`，包含源码、旧版 1.7.5 app、偏好及已有的历史/收藏元数据。156 项基础自测和基于正式 Release 二进制的 13 项隔离生命周期检查通过。安装阶段只核对进程和版本，不截取个人素材库。
+
+安装包为 `app/dist/Mirage-Unpacker-for-macOS-1.8.0.dmg`。GitHub Release 与 appcast 尚未发布 1.8.0。
