@@ -11,11 +11,11 @@ FAILED=0
 pass() { echo "  ✅ $1"; }
 fail() { echo "  ❌ $1"; FAILED=$((FAILED + 1)); }
 
-echo "==> 1/5 编译"
+echo "==> 1/6 编译"
 cd "$ROOT"
 swift build --disable-sandbox >/tmp/pkd_verify_build.log 2>&1 && pass "swift build" || { fail "swift build（见 /tmp/pkd_verify_build.log）"; exit 1; }
 
-echo "==> 2/5 单元测试（LineStream / 解析器 / 判定表 / X-Ray）"
+echo "==> 2/6 单元测试（LineStream / 解析器 / 判定表 / X-Ray）"
 UNIT_OUT=$("$SELFTEST" 2>&1 | tail -1)
 if echo "$UNIT_OUT" | grep -q "全部通过"; then
   pass "$UNIT_OUT"
@@ -24,7 +24,7 @@ else
   "$SELFTEST" 2>&1 | grep FAIL | head -5
 fi
 
-echo "==> 3/5 队列全链路（合成包）"
+echo "==> 3/6 队列全链路（合成包）"
 TESTPKG="$REPO/tools/testdata/test_scene.pkg"
 if [ ! -f "$TESTPKG" ]; then
   echo "  · 生成合成测试包"
@@ -37,7 +37,7 @@ else
   fail "JobQueue 集成未通过"
 fi
 
-echo "==> 4/5 真实包逐文件比对"
+echo "==> 4/6 真实包逐文件比对"
 REAL="$HOME/Library/Application Support/Mirage/Workshop/content/431960/3608924541/scene.pkg"
 BASELINE="$REPO/extracted/3608924541"
 if [ -f "$REAL" ] && [ -d "$BASELINE" ]; then
@@ -54,7 +54,7 @@ else
   echo "  ⏭  跳过（缺少真实包或基线目录）"
 fi
 
-echo "==> 5/5 失败路径（不存在的输入）"
+echo "==> 5/6 失败路径（不存在的输入）"
 GHOST_DIR=$(mktemp -d)
 trap 'rm -rf "$GHOST_DIR"' EXIT
 GHOST="$GHOST_DIR/nope.pkg"
@@ -65,9 +65,16 @@ else
   fail "失败路径判定异常"
 fi
 
+echo "==> 6/6 动画纹理（原始像素 / PNG 图集 / 超大输入）"
+if bash "$REPO/tools/testdata/verify_animation.sh"; then
+  pass "动画纹理验证通过"
+else
+  fail "动画纹理验证未通过"
+fi
+
 echo ""
 if [ "$FAILED" -eq 0 ]; then
-  echo "✅ 全部回归通过"
+  echo "✅ 已执行的回归检查通过；如有跳过请单独确认"
   exit 0
 else
   echo "❌ $FAILED 项失败"

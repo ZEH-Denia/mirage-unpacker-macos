@@ -52,6 +52,17 @@ if let flagIndex = CommandLine.arguments.firstIndex(of: "--trash"),
 
 // MARK: - 队列集成测试入口（pkd-selftest --queue <pkg>）
 
+if let index = CommandLine.arguments.firstIndex(of: "--render-directory"), index + 1 < CommandLine.arguments.count {
+    do {
+        let result = try ExperimentalPuppetPreview.render(in: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+        print(result ? "✅ 静态场景预览已生成" : "ℹ️ 无需组合预览")
+        exit(0)
+    } catch {
+        print("❌ 静态场景预览失败：\(error.localizedDescription)")
+        exit(1)
+    }
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--render-fixtures"), index + 1 < CommandLine.arguments.count {
     await runRenderFixtureTest(directory: URL(fileURLWithPath: CommandLine.arguments[index+1]))
     print(failures == 0 ? "✅ 多图层渲染验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
@@ -83,6 +94,17 @@ func runRenderFixtureTest(directory: URL) async {
         defer { try? original.write(to: sceneURL) }
         var json = try JSONSerialization.jsonObject(with: original) as! [String: Any]
         var objects = json["objects"] as! [[String: Any]]
+        json["objects"] = [objects[0]]
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+        check(try ExperimentalPuppetPreview.render(in: directory), "单张图片拉伸到不同比例时需要组合")
+        var plainLayer = objects[0]
+        plainLayer["origin"] = "40 40 0"
+        plainLayer["size"] = "80 80"
+        json["objects"] = [plainLayer]
+        json["general"] = ["orthogonalprojection": ["width": 80, "height": 80], "clearcolor": "0 0 0"]
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+        check(try !ExperimentalPuppetPreview.render(in: directory), "单张铺满画布的普通图片无需组合")
+        json = try JSONSerialization.jsonObject(with: original) as! [String: Any]
         objects[1]["scale"] = "0.5 1 1"
         json["objects"] = objects
         try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
@@ -91,9 +113,50 @@ func runRenderFixtureTest(directory: URL) async {
         context.draw(scaledImage, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         pixel(25, 40, [0,0,255], "缩小后的模型不应覆盖原来的外沿")
         pixel(35, 40, [255,0,0], "缩放应保持中心位置")
+        var rotatedObjects = try JSONSerialization.jsonObject(with: original) as! [String: Any]
+        var rotatedLayers = rotatedObjects["objects"] as! [[String: Any]]
+        if let parentIndex = rotatedLayers.firstIndex(where: { ($0["id"] as? Int) == 100 }) {
+            rotatedLayers[parentIndex]["origin"] = "70 10 0"
+            rotatedLayers[parentIndex]["angles"] = "0 0 90"
+            rotatedObjects["objects"] = rotatedLayers
+            try JSONSerialization.data(withJSONObject: rotatedObjects).write(to: sceneURL)
+            check(try ExperimentalPuppetPreview.render(in: directory), "应支持二维父节点旋转")
+            let rotated = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(url as CFURL, nil)!, 0, nil)!
+            context.draw(rotated, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            pixel(15, 40, [255,0,0], "父节点旋转应改变子图层位置")
+            rotatedLayers[parentIndex]["origin"] = "15 20 0"
+            rotatedLayers[parentIndex]["angles"] = "0 0 0"
+            rotatedLayers[parentIndex]["scale"] = "0.5 0.5 1"
+            rotatedLayers[parentIndex]["parent"] = 101
+            rotatedLayers.append(["id": 101, "origin": "5 0 0"])
+            rotatedObjects["objects"] = rotatedLayers
+            try JSONSerialization.data(withJSONObject: rotatedObjects).write(to: sceneURL)
+            check(try ExperimentalPuppetPreview.render(in: directory), "应支持多级父节点缩放")
+            let nested = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(url as CFURL, nil)!, 0, nil)!
+            context.draw(nested, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            pixel(20, 40, [0,0,255], "父节点缩放后图层外侧应显示背景")
+            pixel(30, 40, [255,0,0], "多级父节点应按顺序组合变换")
+        } else { check(false, "合成场景缺少父节点") }
         try original.write(to: sceneURL)
         _ = try ExperimentalPuppetPreview.render(in: directory)
         let oldOutput = try Data(contentsOf: url)
+        var cyclicObjects = objects
+        cyclicObjects[1]["parent"] = 100
+        if let parentIndex = cyclicObjects.firstIndex(where: { ($0["id"] as? Int) == 100 }) {
+            cyclicObjects[parentIndex]["parent"] = 100
+            json["objects"] = cyclicObjects
+            try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+            do { _ = try ExperimentalPuppetPreview.render(in: directory); check(false, "循环父子关系应拒绝") }
+            catch { check(true, "循环父子关系应拒绝") }
+            checkEqual(try Data(contentsOf: url), oldOutput, "父子关系无效不得破坏已有结果")
+        } else { check(false, "合成场景缺少父节点") }
+        var scriptedObjects = objects
+        scriptedObjects[2]["scale"] = ["value": "1 1 1", "script": "dynamic"]
+        json["objects"] = scriptedObjects
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+        do { _ = try ExperimentalPuppetPreview.render(in: directory); check(false, "脚本绑定不得当作用户属性默认值") }
+        catch { check(true, "脚本绑定不得当作用户属性默认值") }
+        checkEqual(try Data(contentsOf: url), oldOutput, "脚本绑定无法渲染时不得破坏已有结果")
         objects[0]["origin"] = "50 invalid 40 0"
         json["objects"] = objects
         try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
@@ -138,6 +201,7 @@ func runImageConflictQueueTest(pkg: URL) async {
     let queue = JobQueue(engineURL: engine.url, log: LogSink(logDirectory: base.appendingPathComponent("logs")))
     let item = WallpaperItem(id: "synthetic", folderURL: pkg.deletingLastPathComponent(), title: "Placeholder", type: "scene", previewURL: nil, pkgURL: pkg, contentRating: "", tags: [], pkgSize: 0, issue: nil)
     var initialCount = 0
+    var initialFiles = Set<String>()
     for policy in [ImageConflictPolicy.keepBoth, .skip, .overwrite, .keepBoth] {
         settings.imageConflictPolicy = policy
         guard let job = queue.enqueue(items: [item], settings: settings, imageExportDestination: base.appendingPathComponent("images")).first else { check(false, "无法创建任务"); return }
@@ -147,15 +211,21 @@ func runImageConflictQueueTest(pkg: URL) async {
             if job.state.isTerminal { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        checkEqual(job.state, .succeeded, "正常导出和全部跳过都应成功：\(job.state.label)")
+        switch job.state {
+        case .succeeded: check(true, "导出成功")
+        case .partial:
+            check(job.warnings.contains { $0.contains("场景预览") }, "部分成功必须说明场景预览限制")
+        default: check(false, "导出应成功或仅因场景预览限制而部分成功：\(job.state.label)")
+        }
         guard let result = job.exportedImages else { check(false, "缺少图片结果"); return }
         if initialCount == 0 {
             initialCount = result.files.count
+            initialFiles = Set(result.files)
             check(initialCount > 0, "首轮必须导出图片")
         } else if policy == .skip {
             check(result.files.isEmpty && result.skippedFiles.count == initialCount, "全部跳过应正确统计")
         } else if policy == .keepBoth {
-            check(result.files.count == initialCount && result.files.allSatisfy { $0.contains(" (2)") }, "保留两份应使用独立名称")
+            check(result.files.count == initialCount && Set(result.files).isDisjoint(with: initialFiles), "保留两份应使用未占用的独立名称")
         }
     }
 }
@@ -165,6 +235,12 @@ if let index = CommandLine.arguments.firstIndex(of: "--puppet-queue"), index + 1
     print(failures == 0 ? "✅ puppet 队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
     exit(failures == 0 ? 0 : 1)
 }
+if let index = CommandLine.arguments.firstIndex(of: "--scene-queue"), index + 3 < CommandLine.arguments.count,
+   let width = Int(CommandLine.arguments[index + 2]), let height = Int(CommandLine.arguments[index + 3]) {
+    await runPuppetQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]), expectPreview: true, expectedWidth: width, expectedHeight: height)
+    print(failures == 0 ? "✅ 场景队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
+    exit(failures == 0 ? 0 : 1)
+}
 if let index = CommandLine.arguments.firstIndex(of: "--puppet-fallback"), index + 1 < CommandLine.arguments.count {
     await runPuppetQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]), expectPreview: false)
     print(failures == 0 ? "✅ puppet 队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
@@ -172,7 +248,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--puppet-fallback"), index 
 }
 
 @MainActor
-func runPuppetQueueTest(pkg: URL, expectPreview: Bool) async {
+func runPuppetQueueTest(pkg: URL, expectPreview: Bool, expectedWidth: Int = 3232, expectedHeight: Int = 1948) async {
     guard case .success(let engine) = RepkgLocator.locate() else { check(false, "未找到引擎"); return }
     let base = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-puppet-test-\(UUID().uuidString)")
     let suite = "pkd.puppet.test.\(UUID().uuidString)"
@@ -191,10 +267,13 @@ func runPuppetQueueTest(pkg: URL, expectPreview: Bool) async {
         try? await Task.sleep(nanoseconds: 100_000_000)
     }
     if case .partial = job.state { check(true, "实验预览应标为部分完成") } else { check(false, "任务状态：\(job.state.label)") }
+    if CommandLine.arguments.contains("--expect-no-texture-errors") {
+        check(!job.warnings.contains { $0.contains("纹理写入失败") || $0.contains("纹理读取失败") }, "纹理转换不应失败")
+    }
     let url = base.appendingPathComponent("images/测试_generic-puppet-test/\(ExperimentalPuppetPreview.outputName)")
     let image = CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
     if expectPreview {
-        check(image?.width == 3232 && image?.height == 1948, "应导出 3232×1948 的场景预览")
+        check(image?.width == expectedWidth && image?.height == expectedHeight, "应导出 \(expectedWidth)×\(expectedHeight) 的场景预览")
         check(job.warnings.contains { $0.contains("可能未包含") }, "应提示未渲染效果")
         check(job.exportedImages?.files.contains(ExperimentalPuppetPreview.outputName) == true, "结果应列出预览文件")
     } else {
@@ -924,18 +1003,22 @@ do {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let context = CGContext(data: nil, width: 12, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     let image = context.makeImage()!
-    for name in ["正常.png", "X-Ray.png", "shake_mask.png", ExperimentalPuppetPreview.outputName, "preview.jpg"] {
+    for name in ["正常.png", "X-Ray.png", "shake_mask.png", ExperimentalPuppetPreview.outputName, "场景预览-实验 (2).png", "preview.jpg"] {
         let url = root.appendingPathComponent(name)
         let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
         CGImageDestinationAddImage(dest, image, nil)
         check(CGImageDestinationFinalize(dest), "应创建合成图片")
     }
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: root.appendingPathComponent(ExperimentalPuppetPreview.outputName).path)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2)], ofItemAtPath: root.appendingPathComponent("场景预览-实验 (2).png").path)
     try FileManager.default.copyItem(at: root.appendingPathComponent("正常.png"), to: outside)
     try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("outside.png"), withDestinationURL: outside)
     try Data("broken".utf8).write(to: root.appendingPathComponent("broken.png"))
     let images = try ExportedImage.scan(directory: root)
-    checkEqual(images.count, 4, "排除预览、损坏图片和输出目录外的软链接")
+    checkEqual(images.count, 5, "排除预览、损坏图片和输出目录外的软链接")
     checkEqual(images.first?.role, "实验性场景预览", "场景预览应排在最前")
+    checkEqual(images.first?.url.lastPathComponent, "场景预览-实验 (2).png", "重复导出时优先显示最新场景预览")
+    checkEqual(images.filter { $0.role == "实验性场景预览" }.count, 2, "保留两份的场景预览都应标注实验限制")
     check(images.allSatisfy { $0.width == 12 && $0.height == 8 }, "读取原图实际尺寸")
     check(images.contains { $0.role == "正常层" }, "识别正常层")
     check(images.contains { $0.role == "X-Ray 层" }, "识别 X-Ray")
@@ -955,6 +1038,8 @@ do {
     }
     checkEqual(assess([]).kind, .unknown, "空目录不能视为完整画面")
     checkEqual(assess(["scene.json", "materials/main.tex"]).kind, .singleTexture, "单纹理只表示素材数")
+    check(assess(["scene.json", "materials/main.tex"]).hasSceneDescription, "单纹理场景仍须检查真实图层")
+    check(!assess(["materials/main.tex"]).hasSceneDescription, "缺少场景描述时不得误判存在")
     checkEqual(assess(["materials/main.tex", "materials/mask.tex"]).kind, .layered, "多纹理需提示分层可能")
     checkEqual(assess(["materials/main.tex", "particles/fog.json"]).kind, .layered, "单纹理有粒子仍可能不完整")
     checkEqual(assess(["models/Body.MDL", "materials/main.tex"]).kind, .model, "模型优先于纹理数量")

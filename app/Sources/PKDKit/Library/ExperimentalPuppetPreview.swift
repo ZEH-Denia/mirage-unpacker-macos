@@ -34,21 +34,53 @@ public enum ExperimentalPuppetPreview {
         let width = max(1, Int((CGFloat(w) * outputScale).rounded()))
         let height = max(1, Int((CGFloat(h) * outputScale).rounded()))
         let bg = try numbers(general["clearcolor"], fallback: [0, 0, 0])
-        struct Layer { let object: [String: Any]; let model: URL?; let texture: URL }
+        var byID: [Int: [String: Any]] = [:]
+        for object in objects {
+            if let id = object["id"] as? Int {
+                guard byID[id] == nil else { throw PreviewError.unsupportedScene }
+                byID[id] = object
+            }
+        }
+        func parentChain(_ object: [String: Any]) throws -> [[String: Any]]? {
+            var chain: [[String: Any]] = []
+            var current = object
+            var visited = Set<Int>()
+            while let reference = current["parent"] {
+                guard let id = reference as? Int, visited.insert(id).inserted,
+                      visited.count <= 64, let parent = byID[id] else { throw PreviewError.unsupportedScene }
+                if let rawVisible = parent["visible"] {
+                    guard let visible = try defaultValue(rawVisible) as? Bool else { throw PreviewError.unsupportedScene }
+                    if !visible { return nil }
+                }
+                if let alpha = parent["alpha"] {
+                    guard let value = alpha as? Double, value == 1 else { throw PreviewError.unsupportedScene }
+                }
+                chain.append(parent)
+                current = parent
+            }
+            return chain.reversed()
+        }
+        struct Layer { let object: [String: Any]; let parents: [[String: Any]]; let model: URL?; let texture: URL }
         var layers: [Layer] = []
         for object in objects {
-            if let visible = object["visible"] as? Bool, !visible { continue }
+            if let rawVisible = object["visible"] {
+                let visible = try defaultValue(rawVisible)
+                guard let visible = visible as? Bool else { throw PreviewError.unsupportedScene }
+                if !visible { continue }
+            }
             if let path = object["image"] as? String, path.lowercased().hasSuffix(".mdl") { throw PreviewError.unsupportedScene }
             guard let imagePath = object["image"] as? String, imagePath.hasSuffix(".json") else { continue }
-            guard !(object["visible"] is [String: Any]), object["parent"] == nil else { throw PreviewError.unsupportedScene }
             let url = try safeURL(imagePath)
             if !FileManager.default.fileExists(atPath: url.path) {
                 if imagePath.hasPrefix("models/util/") { continue }
                 throw PreviewError.unsupportedScene
             }
+            guard let parents = try parentChain(object) else { continue }
             let descriptor = try readJSON(imagePath)
-            let crop = try numbers(descriptor["cropoffset"], fallback: [0, 0])
-            guard crop.allSatisfy({ abs($0) < 0.00001 }), let materialPath = descriptor["material"] as? String else { throw PreviewError.unsupportedScene }
+            // The scene object's origin places the cropped image. cropoffset records
+            // editor crop metadata; applying it a second time would move the layer.
+            _ = try numbers(descriptor["cropoffset"], fallback: [0, 0])
+            guard let materialPath = descriptor["material"] as? String else { throw PreviewError.unsupportedScene }
             let material = try readJSON(materialPath)
             guard let passes = material["passes"] as? [[String: Any]], passes.count == 1,
                   let textures = passes[0]["textures"] as? [Any], textures.count == 1,
@@ -61,9 +93,33 @@ public enum ExperimentalPuppetPreview {
             guard descriptor["puppet"] == nil || puppet != nil else { throw PreviewError.unsupportedScene }
             let textureURLs = try ["png", "jpg", "jpeg", "webp"].map { try safeURL(texturePath + "." + $0) }
             guard let texture = textureURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { throw PreviewError.invalidTexture }
-            layers.append(Layer(object: object, model: puppet, texture: texture))
+            layers.append(Layer(object: object, parents: parents, model: puppet, texture: texture))
         }
         guard !layers.isEmpty else { return false }
+        if objects.count == 1, layers.count == 1, layers[0].model == nil, layers[0].parents.isEmpty {
+            let object = layers[0].object
+            let origin = try numbers(object["origin"], fallback: [0, 0, 0])
+            let size = try numbers(object["size"], fallback: [0, 0])
+            let scale = try numbers(object["scale"], fallback: [1, 1, 1])
+            let angles = try numbers(object["angles"], fallback: [0, 0, 0])
+            let effects = object["effects"] as? [Any]
+            let source = CGImageSourceCreateWithURL(layers[0].texture as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
+            let metadata = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+            let imageWidth = metadata?[kCGImagePropertyPixelWidth] as? Int ?? 0
+            let imageHeight = metadata?[kCGImagePropertyPixelHeight] as? Int ?? 0
+            if abs(origin[0] - Double(w) / 2) < 0.00001,
+               abs(origin[1] - Double(h) / 2) < 0.00001,
+               abs(size[0] - Double(w)) < 0.00001, abs(size[1] - Double(h)) < 0.00001,
+               scale.allSatisfy({ abs($0 - 1) < 0.00001 }),
+               angles.allSatisfy({ abs($0) < 0.00001 }),
+               (object["alpha"] as? Double ?? 1) == 1,
+               (1...8192).contains(imageWidth), (1...8192).contains(imageHeight),
+               Int64(imageWidth) * Int64(h) == Int64(imageHeight) * Int64(w),
+               object["color"] == nil, object["brightness"] == nil,
+               object["effects"] == nil || effects?.isEmpty == true {
+                return false
+            }
+        }
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw PreviewError.writeFailed }
         ctx.setFillColor(red: max(0, min(1, bg[0])), green: max(0, min(1, bg[1])), blue: max(0, min(1, bg[2])), alpha: 1)
@@ -92,6 +148,15 @@ public enum ExperimentalPuppetPreview {
                       let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw PreviewError.invalidTexture }
                 ctx.saveGState()
                 defer { ctx.restoreGState() }
+                for parent in layer.parents {
+                    let position = try numbers(parent["origin"], fallback: [0, 0, 0])
+                    let rotation = try numbers(parent["angles"], fallback: [0, 0, 0])
+                    let parentScale = try numbers(parent["scale"], fallback: [1, 1, 1])
+                    guard abs(rotation[0]) < 0.00001, abs(rotation[1]) < 0.00001 else { throw PreviewError.unsupportedScene }
+                    ctx.translateBy(x: position[0], y: position[1])
+                    ctx.rotate(by: rotation[2] * .pi / 180)
+                    ctx.scaleBy(x: parentScale[0], y: parentScale[1])
+                }
                 ctx.translateBy(x: origin[0], y: origin[1])
                 ctx.rotate(by: angles[2] * .pi / 180)
                 ctx.scaleBy(x: scale[0], y: scale[1])
@@ -119,12 +184,22 @@ public enum ExperimentalPuppetPreview {
 
     private static func numbers(_ value: Any?, fallback: [CGFloat]) throws -> [CGFloat] {
         guard let value else { return fallback }
-        guard let text = value as? String else { throw PreviewError.unsupportedScene }
+        guard let text = try defaultValue(value) as? String else { throw PreviewError.unsupportedScene }
         let pieces = text.split(whereSeparator: { $0.isWhitespace })
         let parts = pieces.compactMap { Double($0) }
         guard parts.count == pieces.count, parts.count == fallback.count,
               parts.allSatisfy({ $0.isFinite && abs($0) < 1_000_000 }) else { throw PreviewError.unsupportedScene }
         return parts.map { CGFloat($0) }
+    }
+
+    private static func defaultValue(_ value: Any) throws -> Any {
+        guard let wrapped = value as? [String: Any] else { return value }
+        // User-property bindings have an explicit static default; scripts and
+        // animation bindings need a runtime and remain unsupported.
+        guard Set(wrapped.keys).isSubset(of: ["user", "value"]),
+              wrapped["user"] != nil, let fallback = wrapped["value"],
+              !(fallback is [String: Any]) else { throw PreviewError.unsupportedScene }
+        return fallback
     }
 
     private static func drawMesh(model: URL, image: CGImage, context ctx: CGContext) throws {

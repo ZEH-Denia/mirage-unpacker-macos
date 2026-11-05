@@ -17,6 +17,7 @@ public struct ExportAssessment: Equatable, Sendable {
     public let modelCount: Int
     public let textureCount: Int
     public let effectCount: Int
+    public let hasSceneDescription: Bool
     public var title: String { kind.title }
     public var explanation: String {
         switch kind {
@@ -25,13 +26,14 @@ public struct ExportAssessment: Equatable, Sendable {
         case .layered:
             return "发现 \(textureCount) 张纹理及 \(effectCount) 个效果资源。图片可能是图集、遮罩或分层素材，不能保证直接导出就是完整壁纸。"
         case .singleTexture:
-            return "包内只有一张纹理，将按原有流程导出。仅凭目录无法确认是否存在裁切、变形或其他场景处理。"
+            return "包内只有一张纹理；仍会检查场景引用、位置与变形，再决定是否需要组合。"
         case .unknown:
             return "未找到足够的纹理信息。导出时仍会检查实际产物，未知状态不代表可以还原完整画面。"
         }
     }
     public init(info: PkgInfo) {
         let paths = Set(info.entries.map { $0.path.lowercased().replacingOccurrences(of: "\\", with: "/") })
+        hasSceneDescription = paths.contains("scene.json")
         modelCount = paths.filter { $0.hasSuffix(".mdl") }.count
         textureCount = paths.filter { $0.hasSuffix(".tex") }.count
         effectCount = paths.filter { $0.hasPrefix("effects/") || $0.hasPrefix("particles/") || $0.hasSuffix(".js") }.count

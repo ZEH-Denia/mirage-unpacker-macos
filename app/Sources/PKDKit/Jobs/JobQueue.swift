@@ -193,12 +193,15 @@ public final class JobQueue: ObservableObject {
                 logSink.append(jobID: jobID, text: "读取包信息失败：\(error.message)", kind: .warning)
             }
         }
-        let needsSceneCheck = job.imageExportDestination != nil && (expected.map { [.model, .layered].contains(ExportAssessment(info: $0).kind) } ?? false)
+        let needsSceneCheck = job.imageExportDestination != nil && (expected.map {
+            let assessment = ExportAssessment(info: $0)
+            return assessment.hasSceneDescription || [.model, .layered].contains(assessment.kind)
+        } ?? true)
         var extractionRequest = job.request
         if needsSceneCheck {
             extractionRequest.flatten = false
             extractionRequest.convertTextures = true
-            logSink.append(jobID: jobID, text: "发现模型或分层资源，将检查场景引用并尝试生成静态预览", kind: .marker)
+            logSink.append(jobID: jobID, text: "将检查场景引用，按图层结构决定是否生成静态预览", kind: .marker)
         }
 
         guard job.state != .cancelling else {

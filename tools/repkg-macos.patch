@@ -10,7 +10,7 @@ index 64b2f6b..e26db54 100644
          <Version>0.4.0</Version>
          <Copyright>Copyright © NotScuffed 2025</Copyright>
      </PropertyGroup>
-@@ -12,7 +12,17 @@
+@@ -12,7 +12,18 @@
      <ItemGroup>
          <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
          <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
@@ -18,8 +18,9 @@ index 64b2f6b..e26db54 100644
 -        <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
 +        <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
 +        <!--
-+            RePKG consumes decoded TEX pixel buffers and writes PNG/GIF; it does not
-+            decode TIFF/ICC input or call HistogramEqualization. Suppress only those
++            RePKG consumes decoded TEX pixel buffers and writes PNG/GIF. PNG-backed
++            animation atlases use the explicit PNG decoder with metadata disabled;
++            it does not decode TIFF/ICC input or call HistogramEqualization. Suppress only those
 +            ImageSharp advisories whose vulnerable APIs are not used here.
 +        -->
 +        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" />
@@ -397,3 +398,171 @@ index 0000000..e50bbdc
 +  </assembly>
 +  <assembly fullname="CommandLine" preserve="all" />
 +</linker>
+diff --git a/RePKG.Application/Texture/TexToImageConverter.cs b/RePKG.Application/Texture/TexToImageConverter.cs
+index 2839e25..b7a997c 100644
+--- a/RePKG.Application/Texture/TexToImageConverter.cs
++++ b/RePKG.Application/Texture/TexToImageConverter.cs
+@@ -5,6 +5,7 @@ using RePKG.Application.Texture.Helpers;
+ using RePKG.Core.Texture;
+ using SixLabors.ImageSharp;
+ using SixLabors.ImageSharp.Formats.Gif;
++using SixLabors.ImageSharp.Formats.Png;
+ using SixLabors.ImageSharp.PixelFormats;
+ using SixLabors.ImageSharp.Processing;
+ 
+@@ -80,6 +81,9 @@ namespace RePKG.Application.Texture
+         {
+             if (tex == null) throw new ArgumentNullException(nameof(tex));
+ 
++            if (tex.IsGif)
++                return MipmapFormat.ImageGIF;
++
+             if (tex.IsVideoTexture)
+             {
+                 return MipmapFormat.VideoMp4;
+@@ -97,61 +101,91 @@ namespace RePKG.Application.Texture
+         {
+             var frameFormat = tex.FirstImage.FirstMipmap.Format;
+ 
+-            if (!frameFormat.IsRawFormat())
++            var encodedPng = frameFormat == MipmapFormat.ImagePNG;
++            if (!frameFormat.IsRawFormat() && !encodedPng)
+                 throw new InvalidOperationException(
+-                    "Only raw mipmap formats are supported right now while converting gif");
+-
+-            var image = ImageFromRawFormat(frameFormat, null,
+-                tex.FrameInfoContainer.GifWidth,
+-                tex.FrameInfoContainer.GifHeight);
++                    "Only raw or PNG mipmap formats are supported while converting gif");
++
++            if (encodedPng && (tex.FrameInfoContainer.GifWidth <= 0 || tex.FrameInfoContainer.GifHeight <= 0
++                || tex.FrameInfoContainer.GifWidth > 8192 || tex.FrameInfoContainer.GifHeight > 8192
++                || (long) tex.FrameInfoContainer.GifWidth * tex.FrameInfoContainer.GifHeight * tex.FrameInfoContainer.Frames.Count > 100_000_000))
++                throw new InvalidOperationException("Encoded animation dimensions exceed safe limits");
++            using var image = encodedPng
++                ? new Image<Rgba32>(tex.FrameInfoContainer.GifWidth, tex.FrameInfoContainer.GifHeight)
++                : ImageFromRawFormat(frameFormat, null, tex.FrameInfoContainer.GifWidth, tex.FrameInfoContainer.GifHeight);
+             
+             var sequenceImages = new Image[tex.ImagesContainer.Images.Count];
+-
+-            for (var i = 0; i < sequenceImages.Length; i++)
++            long decodedPixels = 0;
++            try
+             {
+-                var mipmap = tex.ImagesContainer.Images[i].FirstMipmap;
+-                sequenceImages[i] = ImageFromRawFormat(frameFormat, mipmap.Bytes, mipmap.Width, mipmap.Height);
+-            }
++                for (var i = 0; i < sequenceImages.Length; i++)
++                {
++                    var mipmap = tex.ImagesContainer.Images[i].FirstMipmap;
++                    if (mipmap.Format != frameFormat)
++                        throw new InvalidOperationException("Mixed animation atlas formats are not supported");
++                    if (encodedPng)
++                    {
++                        var decoder = new PngDecoder { IgnoreMetadata = true };
++                        using var stream = new MemoryStream(mipmap.Bytes, false);
++                        var info = decoder.Identify(Configuration.Default, stream, default);
++                        if (info == null || info.Width != mipmap.Width || info.Height != mipmap.Height
++                            || info.Width <= 0 || info.Height <= 0 || info.Width > 8192 || info.Height > 8192
++                            || (long) info.Width * info.Height > 64_000_000)
++                            throw new InvalidOperationException("PNG animation atlas dimensions are invalid");
++                        decodedPixels += (long) info.Width * info.Height;
++                        if (decodedPixels > 100_000_000)
++                            throw new InvalidOperationException("PNG animation atlases exceed safe limits");
++                        sequenceImages[i] = Image.Load<Rgba32>(mipmap.Bytes, decoder);
++                    }
++                    else
++                        sequenceImages[i] = ImageFromRawFormat(frameFormat, mipmap.Bytes, mipmap.Width, mipmap.Height);
++                }
+ 
+-            foreach (var frameInfo in tex.FrameInfoContainer.Frames)
+-            {
+-                // Frames can be turned to fit into the map so we need to compute cropping coordinates first
+-                // We're keeping width and height signed for the rotation angle calculation
+-                var width = frameInfo.Width != 0 ? frameInfo.Width : frameInfo.HeightX;
+-                var height = frameInfo.Height != 0 ? frameInfo.Height : frameInfo.WidthY;
+-                var x = Math.Min(frameInfo.X, frameInfo.X + width);
+-                var y = Math.Min(frameInfo.Y, frameInfo.Y + height);
+-
+-                // This formula gives us the angle for which we need to turn the frame,
+-                // assuming that either Width or HeightX is 0 (same with Height and WidthY)
+-                var rotationAngle = -(Math.Atan2(Math.Sign(height), Math.Sign(width)) - Math.PI / 4);
+-
+-                var frame = sequenceImages[frameInfo.ImageId].Clone(
+-                    context => context.Crop(new Rectangle(
+-                        (int) x,
+-                        (int) y,
+-                        (int) Math.Abs(width),
+-                        (int) Math.Abs(height))
+-                    ).Rotate((float) Math.Round(rotationAngle * 180 / Math.PI)));
+-
+-                var metadata = frame.Frames.RootFrame.Metadata.GetFormatMetadata(GifFormat.Instance);
+-                metadata.FrameDelay = (int) Math.Round(frameInfo.Frametime * 100.0f);
+-
+-                image.Frames.AddFrame(frame.Frames[0]);
+-            }
++                foreach (var frameInfo in tex.FrameInfoContainer.Frames)
++                {
++                    // Frames can be turned to fit into the map so we need to compute cropping coordinates first
++                    // We're keeping width and height signed for the rotation angle calculation
++                    var width = frameInfo.Width != 0 ? frameInfo.Width : frameInfo.HeightX;
++                    var height = frameInfo.Height != 0 ? frameInfo.Height : frameInfo.WidthY;
++                    var x = Math.Min(frameInfo.X, frameInfo.X + width);
++                    var y = Math.Min(frameInfo.Y, frameInfo.Y + height);
++
++                    // This formula gives us the angle for which we need to turn the frame,
++                    // assuming that either Width or HeightX is 0 (same with Height and WidthY)
++                    var rotationAngle = -(Math.Atan2(Math.Sign(height), Math.Sign(width)) - Math.PI / 4);
++
++                    using var frame = sequenceImages[frameInfo.ImageId].Clone(
++                        context => context.Crop(new Rectangle(
++                            (int) x,
++                            (int) y,
++                            (int) Math.Abs(width),
++                            (int) Math.Abs(height))
++                        ).Rotate((float) Math.Round(rotationAngle * 180 / Math.PI)));
++
++                    var metadata = frame.Frames.RootFrame.Metadata.GetFormatMetadata(GifFormat.Instance);
++                    metadata.FrameDelay = (int) Math.Round(frameInfo.Frametime * 100.0f);
++
++                    image.Frames.AddFrame(frame.Frames[0]);
++                }
+ 
+-            // Remove first black frame
+-            image.Frames.RemoveFrame(0);
++                // Remove first black frame
++                image.Frames.RemoveFrame(0);
+ 
+-            using (var memoryStream = new MemoryStream())
+-            {
+-                image.SaveAsGif(memoryStream, new GifEncoder {ColorTableMode = GifColorTableMode.Local});
+-
+-                return new ImageResult
++                using (var memoryStream = new MemoryStream())
+                 {
+-                    Bytes = memoryStream.ToArray(),
+-                    Format = MipmapFormat.ImageGIF
+-                };
++                    image.SaveAsGif(memoryStream, new GifEncoder {ColorTableMode = GifColorTableMode.Local});
++
++                    return new ImageResult
++                    {
++                        Bytes = memoryStream.ToArray(),
++                        Format = MipmapFormat.ImageGIF
++                    };
++                }
++            }
++            finally
++            {
++                foreach (var sequenceImage in sequenceImages)
++                    sequenceImage?.Dispose();
+             }
+         }
+ 
+@@ -185,4 +219,4 @@ namespace RePKG.Application.Texture
+         public byte[] Bytes { get; set; }
+         public MipmapFormat Format { get; set; }
+     }
+-}
+\ No newline at end of file
++}

@@ -24,14 +24,21 @@ def generate(root):
   target=root/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data);entries.append((path,data))
  objects=[]
  for name,color,origin,size,puppet,angle,alpha in [('background',(0,0,255,255),'50 40 0','100 80',False,0,1),('red',(255,0,0,255),'40 40 0','40 40',True,0,1),('green',(0,255,0,255),'60 40 0','20 40',True,90,.5)]:
-  descriptor={'material':f'materials/{name}.json'}
+  descriptor={'material':f'materials/{name}.json','cropoffset':'12 -7'}
   if puppet:
    descriptor['puppet']=f'models/{name}.mdl';w,h=map(int,size.split());write(descriptor['puppet'],mesh(name,w,h))
   write(f'models/{name}.json',descriptor)
   write(f'materials/{name}.json',{'passes':[{'shader':'genericimage4','blending':'translucent','textures':[name]}]})
   write(f'materials/{name}.png',png(color))
   objects.append({'image':f'models/{name}.json','origin':origin,'size':size,'angles':f'0 0 {angle}','alpha':alpha})
+ objects[1]['visible']={'user':'toggle','value':True}
+ objects[1]['parent']=100
+ objects[1]['origin']='30 40 0'
+ objects[2]['scale']={'user':'scale','value':'1 1 1'}
  objects.append({'image':'models/does-not-exist.json','visible':False})
+ objects.append({'image':'models/conditional-hidden.json','visible':{'user':'toggle','value':False}})
+ objects.append({'image':'models/util/missing.json','visible':{'value':True,'user':{'condition':'1'}}})
+ objects.append({'id':100,'origin':'10 0 0'})
  write('scene.json',{'general':{'orthogonalprojection':{'width':100,'height':80},'clearcolor':'0 0 0'},'objects':objects})
  (root/'scene.pkg').write_bytes(pkg.build_pkg(entries))
  (root/'project.json').write_text(json.dumps({'title':'合成多图层场景','type':'scene'}))
