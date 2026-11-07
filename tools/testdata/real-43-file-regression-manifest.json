@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "kind": "historical-real-asset-regression-record",
+  "status": "historical-only-not-rerunnable",
+  "warning": "这是历史记录，不是当前仓库可重跑的证据。原始 extracted/3608924541 基线目录已被 .gitignore 忽略且不可恢复；本文件只保存路径与 SHA-256 元数据，不包含任何真实素材内容。不得据此声称原基线在本轮通过。",
+  "source": {
+    "workshop_id": "3608924541",
+    "appid": "431960",
+    "scene_pkg_relative": "Mirage/Workshop/content/431960/3608924541/scene.pkg",
+    "scene_pkg_sha256": "9821558253e2553155050279b5646e64e711e19e50a5e38241711ff68e516214",
+    "scene_pkg_sha256_source": "2026-11-06 在本机对真实 scene.pkg 重新计算确认",
+    "assets_in_repo": false,
+    "note": "真实素材仍在本机 Mirage 素材库中，但不入库、不再复制；这里只记录其 SHA-256 与已脱敏的相对路径。文件名中的个人可识别部分已替换为稳定占位符，清单不含任何文件内容。"
+  },
+  "historical_outputs": {
+    "labels": {
+      "0": "历史记录中的旧版引擎输出目录",
+      "1": "历史记录中修改后引擎输出目录"
+    },
+    "location_on_authoring_machine": "app/.build/engine-regression-vcsrc4x0/{0,1}",
+    "file_count_each": 43,
+    "total_bytes_each": 7999999,
+    "consistency": {
+      "verified_on": "2026-11-06",
+      "method": "Python: 递归收集相对路径并用 hashlib.sha256 计算，比较两个 dict",
+      "paths_identical": true,
+      "sha256_identical": true,
+      "files_compared": 43
+    },
+    "files": {
+      "effects/foliagesway/effect.json": "e0d86915eee528779af9d751330e6dd883c5f20cbe058bd6fde646be02ac5be8",
+      "effects/shake/effect.json": "566d04db0dbeb86e5c98b84519a1bc01649802b948e263f5c60d2b337a33a930",
+      "effects/workshop/2844906964/test_shader/effect.json": "d79a31f0a6d028c4fe2f3731707b1fd3d5c290fceb3262baf23abf4412b153f6",
+      "effects/workshop/2981960200/blurprecise/effect.json": "da24483c457b2f61d7bc1331213498ecc55dd0e10d6e23bdf045fad78021bcf5",
+      "fonts/workshop/2981960200/Anurati-Regular.otf": "9b6c41cb089ea9f682f177d2a5dc21e1828c39e6f20b9a4c11d999de912e00c3",
+      "fonts/workshop/2981960200/Quicksand-Bold.otf": "2c81dd94ebab720f768b88de0e4ec953a5528685b64b1b9a0902835f39facf83",
+      "materials/<redacted-shot-1>.json": "9173f86fd604be127c1975ce5e36cec436b7b667b821983babcaab3b0174405c",
+      "materials/<redacted-shot-1>.png": "70d591a54239dd51e5cd0c6f7ded6a361ee3056e74ec7e4b558d23366d0bc474",
+      "materials/<redacted-shot-1>.tex": "187ec7cbb5ede5394b4841db3385956c741914e308dcb33cb0b3490fb5ed676e",
+      "materials/<redacted-shot-1>.tex-json": "33fa0486885424297fd843ed9195eb4d3ca07bccccffb8be2df8cd78e5fe30bf",
+      "materials/<redacted-wechat-1>.json": "b40063fa961ae5ee03bf4754ae277bc7ba2028d8464771290d0a91f83b634956",
+      "materials/<redacted-wechat-1>.png": "682c36953a3c30ded3d673191afd68f0b816f5252acb2459dbc902f9f9de712e",
+      "materials/<redacted-wechat-1>.tex": "11bc375abbffe4fe58cb3724f56818c2386838aa95b4bb4c40e79a63c6c46dce",
+      "materials/<redacted-wechat-1>.tex-json": "33fa0486885424297fd843ed9195eb4d3ca07bccccffb8be2df8cd78e5fe30bf",
+      "materials/effects/foliagesway.json": "95896dcaa058cf8d80b6e0bc1f531a2e533c2da886023a5c22d336224e16e51d",
+      "materials/effects/shake.json": "03e3f5fce8ce7b25e56e79405ba43bc150838e80c1b337c763637465369761fd",
+      "materials/masks/foliagesway_mask_8031e776.png": "a41c85a3fd3a6538d617197610af40eeb5479ac2f24fb172a759ac8b99ebef73",
+      "materials/masks/foliagesway_mask_8031e776.tex": "2cafd51a095cad849945f727d9f6feefb232d384a7f7326eacf6033cc216e2cd",
+      "materials/masks/foliagesway_mask_8031e776.tex-json": "f9fa67bb88148af6f7c3be163b4d7675b4638f2410f38a00e7a1dd7d4cef63a7",
+      "materials/masks/shake_mask_a8426411.png": "f22ca2a5b7f62cc669248b67ac9ef88fe94ccb8a2ce5a90651192067cdc57f63",
+      "materials/masks/shake_mask_a8426411.tex": "e0cbfa0a89eef971fcd86a538d6e696ef2e07b9d80ce4b6249b4d44ac950cfb5",
+      "materials/masks/shake_mask_a8426411.tex-json": "6ba110fcee3a1d95db24dcc1eb738236b88d315659fd0f376900c83d244e7653",
+      "materials/presets/fog1.json": "45a8fc2b4a81eb88916748b0d18f521da6d46acafd582e63b34cc6c52403f9d6",
+      "materials/presets/snowperspective.json": "01c261f7181049d2ef7e44c2649c5f6d989c6d8f17f2fd17d7acf0fe72c1744e",
+      "materials/workshop/2844906964/effects/test_shader.json": "74ed6b07874b4321f41f10aecc16ddbf01d20a82c843bcb12e83ac222af4d59b",
+      "materials/workshop/2981960200/effects/blur_precise_gaussian_x.json": "ca2fcd26ca281e06a43086fd4dc13a449fa91bb783c6856e64b6ac353a20779c",
+      "materials/workshop/2981960200/effects/blur_precise_gaussian_y.json": "0a33cfdc132bdbaaa0b1b6195a394bbdc8caccc44e54be547bf0dc83b1bd9765",
+      "models/<redacted-shot-1>.json": "1c1296b2d188cd5f4cdc58d7d274b7aa9b368b68b480d3b5f1481ebe67d07aad",
+      "models/<redacted-wechat-1>.json": "9dc9fd9081ed5bf2fae23f4bf79555be308431e1b8aef91dea671fec7e53ab5d",
+      "models/<redacted-wechat-1>_puppet.mdl": "c4343fd3806723bfeb0111593edea2b70c00d9c5ef5993c7307631c4bf730b7d",
+      "particles/presets/fog1.json": "2cde371093d343c2c9ec82fca8445e47029da912636a608ebbe12cc56fb4cb31",
+      "particles/presets/snowperspective.json": "c99bb97c1bf760fae59b40cc7149ba674c00ccba281b468ef09a7a8861202822",
+      "preview.jpg": "ff418cd04c1c5ebad47f3b47477d1b9d3a83696b7b0b8bbab61c17e81336589f",
+      "project.json": "9156ced7f5a97b5819576428a4fd74a762cfab7a4e846de4e60e8b9706ce8f40",
+      "scene.json": "82357c8bc115e855a94c4359955496d7c3185d4986e8230cf8e208a10e2c85e2",
+      "shaders/effects/foliagesway.frag": "02954542ab458f828eeb0d9da8201f02bf9c180effecacb81e86402704040f4c",
+      "shaders/effects/foliagesway.vert": "4ee7daa1e00a02feed697b59950218444c82f9b82cc7418f72fcdee6f4545c49",
+      "shaders/effects/shake.frag": "9f3d003499dea2870d2f49692c7d859e38499f35f82574daaebccbce0b0d57ac",
+      "shaders/effects/shake.vert": "9b884c23ad3e38cb7fa76330bf98d8f7029653c3a73f7a732f1cfd3c3829c4bc",
+      "shaders/workshop/2844906964/effects/test_shader.frag": "683530058ca911911d5702699d9ad4f0a8cee7b4cb74f4ff953301f8bdbf0114",
+      "shaders/workshop/2844906964/effects/test_shader.vert": "8f1bfda26dadd4b0731aabfa453f6bc8ed168740435a4cfb4bbe1db96e5a6325",
+      "shaders/workshop/2981960200/effects/blur_precise_gaussian.frag": "7d613ded8d61b1ca68b109d84a8f7f68d2901c65268af7e0ea7628adeb07b16f",
+      "shaders/workshop/2981960200/effects/blur_precise_gaussian.vert": "177057a90b5de94011ad967b36d25a2a51072b06638498a7ce99a9758e45ba0a"
+    }
+  },
+  "reproduce_command": [
+    "find app/.build/engine-regression-vcsrc4x0/0 -type f | sort | xargs shasum -a 256",
+    "find app/.build/engine-regression-vcsrc4x0/1 -type f | sort | xargs shasum -a 256"
+  ],
+  "cannot_rerun_because": [
+    "extracted/3608924541 基线目录被 .gitignore 忽略且已不存在，无法恢复",
+    "历史 43 文件输出依赖真实版权素材，未入库且不复制",
+    "旧版/修改后两个引擎二进制与那次运行环境未保留为可重放快照"
+  ],
+  "created": "2026-11-06",
+  "related_docs": [
+    "docs/SCENE-RENDERING-VALIDATION.md",
+    "docs/DEVELOPMENT-ACCEPTANCE.md",
+    "docs/REPRODUCIBLE-BASELINE.md"
+  ],
+  "path_redaction": {
+    "applied": true,
+    "note": "真实素材文件名已替换为稳定占位符（同一真实文件在 43 条中映射一致）；目录结构、文件名后缀与扩展名保留；每个文件的 SHA-256 不变。原始真实路径仅保存在本机 gitignored 的 app/.build 证据中，不随仓库分发。",
+    "placeholders": {
+      "<redacted-shot-1>": "真实素材文件（文件名已脱敏）",
+      "<redacted-wechat-1>": "真实素材文件（文件名已脱敏）"
+    },
+    "files_redacted": 11,
+    "files_total": 43,
+    "unchanged": "SHA-256、目录层级、扩展名与 0/1 两目录一致性事实均未改变"
+  }
+}

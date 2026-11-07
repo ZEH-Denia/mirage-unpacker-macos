@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 import PKDKit
 import ImageIO
 
@@ -50,17 +51,66 @@ if let flagIndex = CommandLine.arguments.firstIndex(of: "--trash"),
     exit(result.failed.isEmpty ? 0 : 1)
 }
 
+// MARK: - 存储安全回归入口（pkd-selftest --storage-safety）
+
+if CommandLine.arguments.contains("--storage-safety") {
+    let ok = StorageSafetyTests.run(verbose: true)
+    exit(ok ? 0 : 1)
+}
+
 // MARK: - 队列集成测试入口（pkd-selftest --queue <pkg>）
 
 if let index = CommandLine.arguments.firstIndex(of: "--render-directory"), index + 1 < CommandLine.arguments.count {
     do {
-        let result = try ExperimentalPuppetPreview.render(in: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
-        print(result ? "✅ 静态场景预览已生成" : "ℹ️ 无需组合预览")
+        let outcome = try ExperimentalPuppetPreview.renderDetailed(in: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+        print(outcome.rendered ? "✅ 静态场景预览已生成（\(outcome.report.summary)）" : "ℹ️ 无需组合预览")
         exit(0)
     } catch {
         print("❌ 静态场景预览失败：\(error.localizedDescription)")
         exit(1)
     }
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--scene-semantics"), index + 1 < CommandLine.arguments.count {
+    await runSceneSemanticsTest(fixture: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+    print(failures == 0 ? "✅ 场景语义回归通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
+    exit(failures == 0 ? 0 : 1)
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--pose-probe"), index + 1 < CommandLine.arguments.count {
+    // 诊断：解析 MDLV 并按动画首帧姿态蒙皮，打印信息与位移统计
+    let url = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+    let sceneURL = url.deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("scene.json")
+    var layers: [[String: Any]] = []
+    if let data = try? Data(contentsOf: sceneURL),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let objects = json["objects"] as? [[String: Any]] {
+        let modelName = url.lastPathComponent
+        let object = objects.first { object in
+            guard let image = object["image"] as? String, image.hasSuffix(".json"),
+                  let modelPath = try? sceneURL.deletingLastPathComponent()
+                    .appendingPathComponent(image),
+                  let modelData = try? Data(contentsOf: modelPath),
+                  let model = try? JSONSerialization.jsonObject(with: modelData) as? [String: Any],
+                  let puppet = model["puppet"] as? String else { return false }
+            return puppet.hasSuffix(modelName)
+        }
+        layers = object?["animationlayers"] as? [[String: Any]] ?? []
+    }
+    do {
+        let data = try Data(contentsOf: url)
+        if let (geometry, info) = try PuppetSkinning.pose(data: data, layers: layers) {
+            print("bones=\(info.boneCount) anims=\(info.animationCount) applied=\(info.appliedAnimation.map(String.init) ?? "none") blend=\(info.appliedBlend) note=\(info.note ?? "-")")
+            print("vertices=\(geometry.positions.count) indices=\(geometry.indices.count)")
+            print("first=\(geometry.positions.prefix(3).map { "(\(Int($0.x)), \(Int($0.y)))" }.joined(separator: " "))")
+        } else {
+            print("pose unavailable (fallback to raw vertices)")
+        }
+    } catch {
+        print("pose error: \(error)")
+    }
+    exit(0)
 }
 
 if let index = CommandLine.arguments.firstIndex(of: "--render-fixtures"), index + 1 < CommandLine.arguments.count {
@@ -87,7 +137,7 @@ func runRenderFixtureTest(directory: URL) async {
         pixel(10, 10, [0,0,255], "蓝色普通图片应作为背景")
         pixel(30, 40, [255,0,0], "红色 puppet 应按坐标放置")
         pixel(45, 40, [127,128,0], "绿色半透明模型应覆盖红色模型")
-        pixel(75, 40, [0,128,127], "90 度旋转应覆盖到背景指定位置")
+        pixel(75, 40, [0,128,127], "90 度（π/2 弧度）旋转应覆盖到背景指定位置")
         pixel(50, 35, [127,128,0], "共享三角边缘不得重复叠加整层透明度")
         let sceneURL = directory.appendingPathComponent("scene.json")
         let original = try Data(contentsOf: sceneURL)
@@ -117,7 +167,8 @@ func runRenderFixtureTest(directory: URL) async {
         var rotatedLayers = rotatedObjects["objects"] as! [[String: Any]]
         if let parentIndex = rotatedLayers.firstIndex(where: { ($0["id"] as? Int) == 100 }) {
             rotatedLayers[parentIndex]["origin"] = "70 10 0"
-            rotatedLayers[parentIndex]["angles"] = "0 0 90"
+            // 静态角度按弧度：90° = π/2。
+            rotatedLayers[parentIndex]["angles"] = "0 0 1.57080"
             rotatedObjects["objects"] = rotatedLayers
             try JSONSerialization.data(withJSONObject: rotatedObjects).write(to: sceneURL)
             check(try ExperimentalPuppetPreview.render(in: directory), "应支持二维父节点旋转")
@@ -150,19 +201,29 @@ func runRenderFixtureTest(directory: URL) async {
             catch { check(true, "循环父子关系应拒绝") }
             checkEqual(try Data(contentsOf: url), oldOutput, "父子关系无效不得破坏已有结果")
         } else { check(false, "合成场景缺少父节点") }
+        // 脚本/动画绑定：使用作者保存的 value 作为静态默认值（可检查场景渲染实现同样把
+        // 绑定值与原值分开存放），并在报告中计入近似处数。
         var scriptedObjects = objects
         scriptedObjects[2]["scale"] = ["value": "1 1 1", "script": "dynamic"]
         json["objects"] = scriptedObjects
         try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
-        do { _ = try ExperimentalPuppetPreview.render(in: directory); check(false, "脚本绑定不得当作用户属性默认值") }
-        catch { check(true, "脚本绑定不得当作用户属性默认值") }
-        checkEqual(try Data(contentsOf: url), oldOutput, "脚本绑定无法渲染时不得破坏已有结果")
+        let boundOutcome = try ExperimentalPuppetPreview.renderDetailed(in: directory)
+        check(boundOutcome.rendered, "脚本绑定应使用保存的静态默认值继续组合")
+        check(boundOutcome.report.approximatedBindings >= 1, "应报告按静态默认值近似的绑定处数")
+        let boundOutput = try Data(contentsOf: url)
+        scriptedObjects[2]["scale"] = ["script": "dynamic"]
+        json["objects"] = scriptedObjects
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+        do { _ = try ExperimentalPuppetPreview.render(in: directory); check(false, "缺少 value 的绑定应回退") }
+        catch { check(true, "缺少 value 的绑定应回退") }
+        checkEqual(try Data(contentsOf: url), boundOutput, "绑定无法解析时不得破坏已有结果")
+        let stableOutput = try Data(contentsOf: url)
         objects[0]["origin"] = "50 invalid 40 0"
         json["objects"] = objects
         try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
         do { _ = try ExperimentalPuppetPreview.render(in: directory); check(false, "无效坐标应拒绝") }
         catch { check(true, "无效坐标应拒绝") }
-        checkEqual(try Data(contentsOf: url), oldOutput, "渲染失败不得破坏已有结果")
+        checkEqual(try Data(contentsOf: url), stableOutput, "渲染失败不得破坏已有结果")
         try original.write(to: sceneURL)
         guard case .success(let engine) = RepkgLocator.locate() else { check(false, "缺少引擎"); return }
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("pkd-layer-queue-\(UUID().uuidString)")
@@ -187,6 +248,434 @@ if let index = CommandLine.arguments.firstIndex(of: "--image-conflicts"), index 
     await runImageConflictQueueTest(pkg: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
     print(failures == 0 ? "✅ 图片冲突队列验证通过（\(checks) 项断言）" : "❌ \(failures) 项失败")
     exit(failures == 0 ? 0 : 1)
+}
+
+
+/// 通用场景语义回归：静态角度单位、绑定属性静态默认值、不透明度百分比、父层 alpha 传播、
+/// 色调、模型尺寸优先，以及各类不支持结构的回退与旧结果保护。
+
+func jsonData(_ value: Any) -> Data {
+    (try? JSONSerialization.data(withJSONObject: value)) ?? Data()
+}
+
+@MainActor
+func runSceneSemanticsTest(fixture: URL) async {
+    let fileManager = FileManager.default
+    let work = fileManager.temporaryDirectory.appendingPathComponent("pkd-scene-semantics-\(UUID().uuidString)")
+    do { try fileManager.copyItem(at: fixture, to: work) } catch {
+        check(false, "无法准备语义回归目录：\(error.localizedDescription)")
+        return
+    }
+    defer { try? fileManager.removeItem(at: work) }
+    let sceneURL = work.appendingPathComponent("scene.json")
+    let outputURL = work.appendingPathComponent(ExperimentalPuppetPreview.outputName)
+    let scale = 4
+    func writeScene(_ width: Int, _ height: Int, _ objects: [[String: Any]]) throws {
+        let json: [String: Any] = [
+            "general": ["orthogonalprojection": ["width": width, "height": height], "clearcolor": "0 0 0"],
+            "objects": objects,
+        ]
+        try JSONSerialization.data(withJSONObject: json).write(to: sceneURL)
+    }
+    func loadPixels() throws -> (width: Int, height: Int, bytes: [UInt8]) {
+        guard let source = CGImageSourceCreateWithURL(outputURL as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                          | CGBitmapInfo.byteOrder32Big.rawValue) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pointer = context.data!.assumingMemoryBound(to: UInt8.self)
+        return (image.width, image.height,
+                Array(UnsafeBufferPointer(start: pointer, count: image.width * image.height * 4)))
+    }
+    // 场景坐标以左下角为原点，PNG 行为自上而下。
+    func pixel(_ cx: Int, _ cy: Int, canvasHeight: Int, _ expected: [Int], _ message: String) {
+        do {
+            let (width, height, bytes) = try loadPixels()
+            let x = cx * scale
+            let y = (canvasHeight - cy) * scale
+            guard x >= 0, y >= 0, x < width, y < height else { check(false, "\(message)（越界）"); return }
+            let offset = (y * width + x) * 4
+            check((0..<3).allSatisfy { abs(Int(bytes[offset + $0]) - expected[$0]) <= 8 }, message)
+        } catch { check(false, "\(message)：\(error.localizedDescription)") }
+    }
+    let white = [255, 255, 255], black = [0, 0, 0]
+    let whiteLayer: [String: Any] = ["image": "models/white.json", "origin": "40 40 0", "size": "40 40", "alpha": 1]
+    do {
+        // 1. 静态角度单位：0.78540 即 45°（若误作角度制几乎不旋转）。
+        try writeScene(80, 80, [whiteLayer.merging(["angles": "0 0 0.78540"]) { $1 }])
+        check(try ExperimentalPuppetPreview.render(in: work), "0.78540 弧度应为 45° 并参与组合")
+        pixel(66, 40, canvasHeight: 80, white, "45° 旋转后 +X 外沿应被图层覆盖")
+        pixel(66, 66, canvasHeight: 80, black, "45° 旋转后对角外侧应保持背景")
+        try writeScene(80, 80, [whiteLayer.merging(["angles": "0 0 0"]) { $1 }])
+        check(try ExperimentalPuppetPreview.render(in: work), "零旋转单层应参与组合")
+        pixel(66, 40, canvasHeight: 80, black, "对照：未旋转时 +X 外沿应为背景")
+        // 2. 脚本绑定使用保存的静态默认值。
+        let overlay: [String: Any] = ["image": "models/white.json", "origin": "40 40 0", "size": "40 40",
+                                      "alpha": ["value": 0.5, "script": "dynamic"],
+                                      "effects": [["file": "effects/synthetic/effect.json"]]]
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1], overlay,
+            ["image": "models/util/unknown-builtin.json", "origin": "40 40 0", "size": "10 10"],
+        ])
+        let boundOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(boundOutcome.rendered, "脚本绑定 alpha 应使用静态默认值继续组合")
+        pixel(40, 40, canvasHeight: 80, [127, 127, 255], "绑定 alpha 默认值 0.5 应为半透明合成")
+        check(boundOutcome.report.approximatedBindings >= 1, "应报告按静态默认值近似的绑定处数")
+        check(boundOutcome.report.ignoredEffects == 1, "应报告未应用效果的图层数量")
+        check(boundOutcome.report.skippedBuiltinLayers == 1, "应报告跳过的引擎内建图层数量")
+        check(boundOutcome.report.drawnLayers == 2, "报告应只统计实际绘制图层")
+        // 3. 旧版百分比不透明度。
+        var percentOverlay = overlay
+        percentOverlay["alpha"] = 50
+        percentOverlay["effects"] = nil
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1], percentOverlay,
+        ])
+        let percentOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(percentOutcome.rendered, "百分比不透明度应参与组合")
+        pixel(40, 40, canvasHeight: 80, [127, 127, 255], "alpha 50 应等同于 0.5")
+        check(percentOutcome.report.approximatedBindings == 0, "百分比不透明度不应计为绑定近似")
+        // 4. 不透明度是逐层属性：父层 alpha 只影响父层自身，不传给子层。
+        let parentHalf: [String: Any] = ["id": 100, "origin": "30 30 0", "alpha": 0.5]
+        let halfChild: [String: Any] = ["image": "models/white.json", "origin": "0 0 0", "size": "20 20", "parent": 100]
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1], parentHalf, halfChild,
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "父层 alpha 不应阻断子层组合")
+        pixel(30, 30, canvasHeight: 80, white, "子层不透明度应取自身 alpha，不乘父层")
+        var hiddenParent = parentHalf
+        hiddenParent["alpha"] = 0
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1], hiddenParent, halfChild,
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "父层全透明时仍应生成组合图")
+        pixel(30, 30, canvasHeight: 80, white, "父层 alpha 为 0 时子层仍应绘制")
+        // 5. 图层色调。
+        try writeScene(80, 80, [
+            whiteLayer.merging(["color": "1 0.5 0.25"]) { $1 },
+        ])
+        let tintOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(tintOutcome.rendered, "色调图层应参与组合")
+        pixel(40, 40, canvasHeight: 80, [255, 127, 64], "色调应按 RGB 乘法作用于图层")
+        check(tintOutcome.report.tintedLayers == 1, "应报告应用色调的图层数量")
+        // 5b. 色调同样作用于 puppet 网格路径（红色网格 × 0.5 = 127,0,0）。
+        try writeScene(80, 80, [
+            ["image": "models/red.json", "origin": "40 40 0", "size": "40 40", "alpha": 1, "color": "0.5 0.5 0.5"],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "puppet 色调图层应参与组合")
+        pixel(40, 40, canvasHeight: 80, [127, 0, 0], "色调应作用于 puppet 网格像素")
+
+        // 6. 对象 size 决定图层尺寸；模型内自带的 width/height 不覆盖它（保持既有行为）。
+        try Data(#"{"material": "materials/white.json", "width": 20, "height": 20}"#.utf8)
+            .write(to: work.appendingPathComponent("models/asset-size.json"))
+        try writeScene(80, 80, [
+            ["image": "models/asset-size.json", "origin": "40 40 0", "size": "60 60", "alpha": 1],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "含 width/height 的模型应参与组合")
+        pixel(44, 40, canvasHeight: 80, white, "对象 size 内应绘制图层")
+        pixel(52, 40, canvasHeight: 80, white, "对象 size 应优先于模型的 width/height")
+        pixel(74, 40, canvasHeight: 80, black, "超出对象 size 的位置应为背景")
+        // 6b. 纯色层（引擎内建 solidlayer 与包内 solidlayer 描述符）按 flat 语义绘制成
+        //     vec4(color, alpha)；composelayer 是全屏 copy 的容器，本身不产生内容。
+        try Data(#"{"solidlayer": true}"#.utf8)
+            .write(to: work.appendingPathComponent("models/solid-only.json"))
+        try writeScene(80, 80, [
+            ["image": "models/util/solidlayer.json", "origin": "30 40 0", "size": "20 20",
+             "color": "1 0 0", "alpha": 1],
+            ["image": "models/solid-only.json", "origin": "50 40 0", "size": "20 20",
+             "color": "0 0 1", "alpha": 0.5],
+        ])
+        let solidOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(solidOutcome.rendered, "纯色层应参与组合")
+        check(solidOutcome.report.solidLayers == 2, "应报告内建纯色图层数量")
+        pixel(30, 40, canvasHeight: 80, [255, 0, 0], "内建 solidlayer 应按对象颜色绘制")
+        pixel(50, 40, canvasHeight: 80, [0, 0, 128], "包内 solidlayer 应按颜色与 alpha 绘制")
+        // 容器层不产生像素
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+            ["image": "models/util/composelayer.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+        ])
+        let containerOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(containerOutcome.rendered, "含容器的场景应参与组合")
+        check(containerOutcome.report.skippedBuiltinLayers == 1, "容器层应计入跳过的内建图层")
+        check(containerOutcome.report.drawnLayers == 1, "容器层不应计为绘制图层")
+
+        // 6c. 自身不透明度为 0 的层不绘制；动画绑定与条件绑定分别计数；非图片对象计数。
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+            ["image": "models/white.json", "origin": "40 40 0", "size": "40 40", "alpha": 0],
+            ["image": "models/white.json", "origin": "20 20 0", "size": "10 10",
+             "alpha": ["value": 1, "animation": ["c0": []]]],
+            ["image": "models/white.json", "origin": "60 20 0", "size": "10 10",
+             "visible": ["value": true, "user": ["condition": "0", "name": "musicplayers"]]],
+            ["particle": "particles/x.json", "origin": "40 40 0"],
+            ["text": ["script": "x"], "origin": "40 40 0"],
+        ])
+        let mixedOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(mixedOutcome.rendered, "混合场景应参与组合")
+        pixel(40, 40, canvasHeight: 80, [0, 0, 255], "自身 alpha 为 0 的层不应覆盖背景")
+        check(mixedOutcome.report.approximatedBindings == 1, "动画绑定应计为静态默认值近似")
+        check(mixedOutcome.report.conditionalBindings == 1, "条件可见性应计为未求值的条件绑定")
+        check(mixedOutcome.report.undrawnObjects == 2, "文本与粒子对象应计为未渲染对象")
+
+        // 6d. 资源边界：对象数上限、超大画布的输出尺寸、超宽纹理。
+        let many: [[String: Any]] = (0..<1001).map { index in
+            ["image": "models/white.json", "origin": "\(index % 80) 40 0", "size": "1 1", "alpha": 1]
+        }
+        do {
+            try writeScene(80, 80, many)
+            _ = try ExperimentalPuppetPreview.render(in: work)
+            check(false, "超过 1000 个对象应回退")
+        } catch { check(true, "超过 1000 个对象应回退") }
+        let bounded: [[String: Any]] = (0..<200).map { index in
+            ["image": "models/white.json", "origin": "\(index % 80) \(index % 80) 0", "size": "2 2", "alpha": 1]
+        }
+        try writeScene(80, 80, bounded)
+        check(try ExperimentalPuppetPreview.render(in: work), "200 个对象应能组合")
+        // 宽画布（画布上限 8192）应把输出长边限制在 4096
+        try writeScene(8192, 400, [
+            ["image": "models/white.json", "origin": "4096 200 0", "size": "400 200", "alpha": 1],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "超大画布应能组合")
+        if let rendered = CGImageSourceCreateWithURL(
+            work.appendingPathComponent(ExperimentalPuppetPreview.outputName) as CFURL, nil)
+            .flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) {
+            check(rendered.width == 4096 && rendered.height > 0, "输出长边应限制在 4096")
+        } else { check(false, "超大画布应生成图片") }
+        // 超过 8192 像素的纹理应回退
+        if let wide = CGContext(data: nil, width: 8200, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage() {
+            let encoded = NSMutableData()
+            if let dest = CGImageDestinationCreateWithData(encoded, UTType.png.identifier as CFString, 1, nil) {
+                CGImageDestinationAddImage(dest, wide, nil)
+                if CGImageDestinationFinalize(dest) {
+                    try (encoded as Data).write(to: work.appendingPathComponent("materials/wide.png"))
+                    do {
+                        try writeScene(80, 80, [["image": "models/wide.json", "origin": "40 40 0",
+                                                "size": "40 40", "alpha": 1]])
+                        _ = try ExperimentalPuppetPreview.render(in: work)
+                        check(false, "超过 8192 的纹理应回退")
+                    } catch { check(true, "超过 8192 的纹理应回退") }
+                }
+            }
+        }
+
+        // 6e. 容器（composelayer）语义：包内描述符、子层照常绘制并继承父变换、父层不可见时跳过。
+        try Data(#"{"composelayer": true}"#.utf8)
+            .write(to: work.appendingPathComponent("models/compose-only.json"))
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+            ["image": "models/compose-only.json", "id": 600, "origin": "20 20 0",
+             "angles": "0 0 1.57080", "scale": "2 2 1", "alpha": 1],
+            ["image": "models/white.json", "origin": "10 0 0", "size": "20 20", "parent": 600, "alpha": 1],
+        ])
+        let composeOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(composeOutcome.rendered, "包内 composelayer 描述符应作为容器参与组合")
+        check(composeOutcome.report.skippedBuiltinLayers == 1, "包内 composelayer 应计入跳过的内建图层")
+        // 容器 id=600 位于 (20,20)、旋转 90°、缩放 2；子层偏移 (10,0)
+        // → 子中心 = (20,20) + R90(2*(10,0)) = (20,40)，子尺寸 20*2=40。
+        pixel(20, 40, canvasHeight: 80, white, "容器的子层应照常绘制在旋转后的位置")
+        pixel(20, 30, canvasHeight: 80, white, "子层尺寸应继承父层缩放")
+        pixel(40, 20, canvasHeight: 80, [0, 0, 255], "未旋转位置应为背景（证明父旋转生效）")
+        pixel(20, 65, canvasHeight: 80, [0, 0, 255], "子层范围外应为背景")
+        // 父层 visible=false → 子层跳过
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+            ["id": 500, "origin": "20 20 0", "visible": false],
+            ["image": "models/white.json", "origin": "0 0 0", "size": "20 20", "parent": 500, "alpha": 1],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "父层不可见时仍应生成组合图")
+        pixel(20, 20, canvasHeight: 80, [0, 0, 255], "父层不可见时子层不应绘制")
+        // 6f. 纯色层：alpha=0 计入跳过；带 colorBlendMode 时跳过并计数（不按 source-over 画）。
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+            ["image": "models/util/solidlayer.json", "origin": "40 40 0", "size": "20 20", "alpha": 0],
+            ["image": "models/util/solidlayer.json", "origin": "40 40 0", "size": "20 20",
+             "color": "1 0 0", "alpha": 1, "colorBlendMode": 31],
+        ])
+        let solidSkipOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(solidSkipOutcome.rendered, "含不可见/混合模式纯色层时应能组合")
+        check(solidSkipOutcome.report.skippedBuiltinLayers >= 1, "alpha 为 0 的内建纯色层应计入跳过")
+        check(solidSkipOutcome.report.skippedBlendLayers == 1, "带混合模式的纯色层应计入混合跳过")
+        pixel(40, 40, canvasHeight: 80, [0, 0, 255], "混合模式纯色层不应按 source-over 绘制")
+        // 4 个容器 + 4 个不可见内建纯色层应精确计数为 8（与目标真实场景同构）
+        var counting: [[String: Any]] = [["image": "models/background.json", "origin": "40 40 0",
+                                          "size": "80 80", "alpha": 1]]
+        for index in 0..<4 {
+            counting.append(["image": "models/compose-only.json", "id": 700 + index,
+                             "origin": "40 40 0", "size": "10 10", "alpha": 1])
+            counting.append(["image": "models/util/solidlayer.json", "origin": "40 40 0",
+                             "size": "4 4", "alpha": 0])
+        }
+        try writeScene(80, 80, counting)
+        let countingOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(countingOutcome.report.skippedBuiltinLayers == 8,
+              "4 个容器 + 4 个不可见纯色层应精确计为 8 个跳过的内建层")
+        // 6g. 多 pass / 多纹理 / additive 混合仍应回退。
+        for (name, material) in [
+            ("multipass", ["passes": [["shader": "genericimage4", "textures": ["white"]],
+                                      ["shader": "genericimage4", "textures": ["white"]]]]),
+            ("multitexture", ["passes": [["shader": "genericimage4", "textures": ["white", "white"]]]]),
+            ("additive", ["passes": [["shader": "genericimage4", "blending": "additive", "textures": ["white"]]]]),
+        ] {
+            try Data(jsonData(["material": "materials/\(name).json"])).write(
+                to: work.appendingPathComponent("models/\(name).json"))
+            try Data(jsonData(material)).write(to: work.appendingPathComponent("materials/\(name).json"))
+            do {
+                try writeScene(80, 80, [["image": "models/\(name).json", "origin": "40 40 0",
+                                        "size": "40 40", "alpha": 1]])
+                _ = try ExperimentalPuppetPreview.render(in: work)
+                check(false, "\(name) 材质应回退")
+            } catch { check(true, "\(name) 材质应回退") }
+        }
+
+        // 6h. MDLV 骨骼/蒙皮默认姿态（合成像素预期，非 identity 蒙皮）。
+        let animated: [String: Any] = ["animation": 1, "blend": 1.0, "additive": false,
+                                       "visible": true, "rate": 1.0, "name": "测试动画"]
+        // 1) 根骨骼在首帧旋转 90°：局部矩形 (0..40, -10..10) → (-10..10, 0..40)
+        try writeScene(80, 80, [
+            ["image": "models/skinned.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [animated]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "带骨骼的 puppet 应能组合")
+        pixel(20, 40, canvasHeight: 80, white, "蒙皮后矩形应旋转到 +Y 方向")
+        pixel(50, 20, canvasHeight: 80, [0, 0, 0], "原始（未旋转）位置应为背景")
+        pixel(20, 15, canvasHeight: 80, [0, 0, 0], "旋转前的下沿应为背景")
+        // 2) 同一模型去掉动画层 → 回退绑定姿态
+        try writeScene(80, 80, [
+            ["image": "models/skinned.json", "origin": "20 20 0", "alpha": 1],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "无动画层时应按绑定姿态绘制")
+        pixel(50, 20, canvasHeight: 80, white, "无动画层时应保持绑定姿态位置")
+        pixel(20, 40, canvasHeight: 80, [0, 0, 0], "无动画层时不应旋转")
+        // 3) 权重归一：两骨骼各 1.0（合计 2.0）→ 归一后为 0.5/0.5，位移取中点 +30
+        try writeScene(80, 80, [
+            ["image": "models/skinned-half.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [animated]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "双骨权重应参与组合")
+        pixel(50, 20, canvasHeight: 80, white, "权重归一后应落在两骨骼中点（+30）")
+        pixel(20, 20, canvasHeight: 80, [0, 0, 0], "未归一化（+60）时不应落在原点")
+        // 4) 无效/异常骨骼数据必须回退到原始顶点（绑定位置），不得崩溃
+        for (model, label) in [("models/skinned-badbone.json", "骨骼索引越界"),
+                               ("models/skinned-zeroweight.json", "权重全零"),
+                               ("models/skinned-truncated.json", "模型截断"),
+                               ("models/skinned-oversize.json", "骨骼数超限")] {
+            do {
+                try writeScene(80, 80, [
+                    ["image": model, "origin": "20 20 0", "alpha": 1,
+                     "animationlayers": [animated]],
+                ])
+                check(try ExperimentalPuppetPreview.render(in: work), "\(label)：应回退并完成组合")
+                pixel(50, 20, canvasHeight: 80, white, "\(label)：应保留原始顶点位置")
+                pixel(20, 40, canvasHeight: 80, [0, 0, 0], "\(label)：不得应用错误姿态")
+            } catch {
+                check(false, "\(label)：不应抛错（应回退）：\(error.localizedDescription)")
+            }
+        }
+        // 5) 父链循环（前向父）：拓扑不可信 → 必须回退原始顶点，且不得套用姿态
+        try writeScene(80, 80, [
+            ["image": "models/skinned-cycle.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [animated]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "父链循环应能安全回退")
+        pixel(50, 20, canvasHeight: 80, white, "父链循环：应保留原始顶点位置")
+        pixel(20, 40, canvasHeight: 80, [0, 0, 0], "父链循环：不得套用任何姿态")
+        // 5b) 绕 X 轴 90°：平面矩形在二维投影里塌陷
+        try writeScene(80, 80, [
+            ["image": "models/skinned-xrot.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [animated]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "X 轴旋转应能组合")
+        pixel(20, 30, canvasHeight: 80, [0, 0, 0], "绕 X 轴旋转后矩形应塌陷（原内部点变背景）")
+        // 5c) 首帧缩放 2 倍：矩形放大到原始范围之外
+        try writeScene(80, 80, [
+            ["image": "models/skinned-scale.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [animated]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "首帧缩放应能组合")
+        pixel(20, 35, canvasHeight: 80, white, "缩放 2 倍后原范围外应为白色")
+        // 5d) flag_a == 2 分支：仍应解析并套用姿态
+        try writeScene(80, 80, [
+            ["image": "models/skinned-flaga2.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [animated]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "flag_a==2 网格应能组合")
+        pixel(20, 40, canvasHeight: 80, white, "flag_a==2 时应正常套用姿态")
+        // 5e) blend < 1：按半权重插值（四元数近似），45° 处应可见
+        var halfBlend = animated; halfBlend["blend"] = 0.5
+        try writeScene(80, 80, [
+            ["image": "models/skinned.json", "origin": "20 20 0", "alpha": 1,
+             "animationlayers": [halfBlend]],
+        ])
+        check(try ExperimentalPuppetPreview.render(in: work), "blend<1 应能组合")
+        pixel(34, 34, canvasHeight: 80, white, "blend=0.5 应给出约 45° 的中间姿态")
+        pixel(20, 40, canvasHeight: 80, [0, 0, 0], "blend=0.5 不应给出 90° 的完整姿态")
+        // 5f) 多图层 / additive / 找不到动画 → 保守回退到绑定姿态
+        for (layers, label) in [
+            ([animated, ["animation": 1, "blend": 1.0, "additive": false, "visible": true]], "多图层"),
+            ([["animation": 1, "blend": 1.0, "additive": true, "visible": true]], "additive 图层"),
+            ([["animation": 999, "blend": 1.0, "additive": false, "visible": true]], "动画 id 不存在"),
+        ] {
+            try writeScene(80, 80, [
+                ["image": "models/skinned.json", "origin": "20 20 0", "alpha": 1,
+                 "animationlayers": layers],
+            ])
+            check(try ExperimentalPuppetPreview.render(in: work), "\(label)：应回退并完成组合")
+            pixel(50, 20, canvasHeight: 80, white, "\(label)：应保留绑定姿态")
+            pixel(20, 40, canvasHeight: 80, [0, 0, 0], "\(label)：不得套用部分姿态")
+        }
+
+        // 7. 反例：不支持结构必须回退，且不得破坏已有结果。
+        var goodOutput = try Data(contentsOf: outputURL)
+        func expectRejected(_ objects: [[String: Any]], _ message: String) {
+            do {
+                try writeScene(80, 80, objects)
+                _ = try ExperimentalPuppetPreview.render(in: work)
+                check(false, message)
+            } catch { check(true, message) }
+            checkEqual((try? Data(contentsOf: outputURL)) ?? Data(), goodOutput, "\(message)：失败时保留已有结果")
+        }
+        expectRejected([["image": "models/unknown-shader.json", "origin": "40 40 0", "size": "20 20"]],
+                       "未知着色器应回退")
+        expectRejected([whiteLayer.merging(["alpha": ["script": "x"]]) { $1 }],
+                       "缺少默认值的绑定应回退")
+        expectRejected([whiteLayer.merging(["origin": ["script": "x"]]) { $1 }],
+                       "缺少默认值的坐标绑定应回退")
+        expectRejected([whiteLayer.merging(["angles": "0.2 0 0"]) { $1 }],
+                       "3D 旋转应回退")
+        expectRejected([whiteLayer.merging(["colorBlendMode": 1]) { $1 }],
+                       "未确认的色调混合模式应回退")
+        expectRejected([["image": "models/missing-layer.json", "origin": "40 40 0", "size": "20 20"]],
+                       "缺失的非内建模型应回退")
+        expectRejected([whiteLayer.merging(["alpha": 150]) { $1 }], "超出范围的百分比不透明度应回退")
+        expectRejected([whiteLayer.merging(["alpha": true]) { $1 }], "布尔不透明度应回退")
+        expectRejected([whiteLayer.merging(["brightness": 2]) { $1 }], "未确认的亮度应回退")
+        expectRejected([whiteLayer.merging(["perspective": true]) { $1 }], "透视图层应回退")
+        expectRejected([whiteLayer.merging(["reflected": true]) { $1 }], "镜像图层应回退")
+        expectRejected([whiteLayer.merging(["reflected": ["script": "x"]]) { $1 }],
+                       "镜像绑定缺默认值应回退（不得静默放行）")
+        expectRejected([whiteLayer.merging(["perspective": 1]) { $1 }],
+                       "非布尔透视值应回退")
+        // {"value": true} 形式的内建层标记应被识别
+        try Data(#"{"solidlayer": {"value": true}}"#.utf8)
+            .write(to: work.appendingPathComponent("models/solid-wrapped.json"))
+        try writeScene(80, 80, [
+            ["image": "models/background.json", "origin": "40 40 0", "size": "80 80", "alpha": 1],
+            ["image": "models/solid-wrapped.json", "origin": "40 40 0", "size": "20 20",
+             "color": "1 0 0", "alpha": 1],
+        ])
+        let wrappedOutcome = try ExperimentalPuppetPreview.renderDetailed(in: work)
+        check(wrappedOutcome.report.solidLayers == 1, "{\"value\": true} 的 solidlayer 标记应被识别")
+        goodOutput = try Data(contentsOf: outputURL)
+        expectRejected([whiteLayer.merging(["attachment": "bone"]) { $1 }], "骨骼锚点应回退")
+        try? fileManager.removeItem(at: work.appendingPathComponent("models/asset-size.json"))
+    } catch { check(false, "场景语义回归：\(error.localizedDescription)") }
 }
 
 @MainActor
@@ -274,8 +763,11 @@ func runPuppetQueueTest(pkg: URL, expectPreview: Bool, expectedWidth: Int = 3232
     let image = CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
     if expectPreview {
         check(image?.width == expectedWidth && image?.height == expectedHeight, "应导出 \(expectedWidth)×\(expectedHeight) 的场景预览")
-        check(job.warnings.contains { $0.contains("可能未包含") }, "应提示未渲染效果")
-        check(job.exportedImages?.files.contains(ExperimentalPuppetPreview.outputName) == true, "结果应列出预览文件")
+        check(job.warnings.contains { $0.contains("实验性静态姿态") && $0.contains("已组合") }, "应提示静态预览范围与实际组合图层数")
+        let exported = job.exportedImages?.files ?? []
+        check(exported.contains(ExperimentalPuppetPreview.outputName)
+              && exported.contains(where: { $0 != ExperimentalPuppetPreview.outputName }),
+              "预览与原图应同时保留")
     } else {
         check(image == nil, "不支持的结构不应生成伪预览")
         check(job.warnings.contains { $0.contains("预览未完成") }, "应提示场景不支持")

@@ -69,10 +69,10 @@ def build_tex_dxt5(width: int, height: int, rgb565: int) -> bytes:
     return bytes(out)
 
 
-def build_pkg(entries) -> bytes:
+def build_pkg(entries, version: str = "PKGV0005") -> bytes:
     header = bytearray()
     body = bytearray()
-    magic = "PKGV0005"
+    magic = version
     header += struct.pack("<i", len(magic)) + magic.encode("utf-8")
     header += struct.pack("<i", len(entries))
 

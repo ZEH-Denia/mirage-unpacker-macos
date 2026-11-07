@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "kind": "synthetic-reproducible-baseline",
+  "description": "Synthetic, repository-reproducible extraction baseline replacing the unrecoverable extracted/3608924541 real baseline. SHA-256 values are engine-output goldens pinned to the engine version below; file/pixel structure expectations are derived independently from the generator.",
+  "replaces": {
+    "historical_path": "extracted/3608924541",
+    "status": "unrecoverable-gitignored",
+    "note": "Original real-asset baseline cannot be restored or re-run; do not claim it passed."
+  },
+  "fixture": {
+    "generator": "tools/testdata/make_baseline_pkg.py",
+    "directory": "tools/testdata/baseline-scene",
+    "pkg": "tools/testdata/baseline-scene/scene.pkg",
+    "pkg_sha256": "d32c122fe63dd7d280545cbdd5714e82a0773616c2cd1148ecfeab514980207e",
+    "project_json": "tools/testdata/baseline-scene/project.json",
+    "project_json_sha256": "0352985805c1a9fb1a620c0885c383e73990960a85b7749e4d8c73b465d8b6bd"
+  },
+  "engine": {
+    "executable": "tools/bin/repkg",
+    "version": "repkg 0.4.0+8005eb271f4cb5b9e375bafa912029a0d67b5eb8"
+  },
+  "extract_command": [
+    "extract",
+    "<scene.pkg>",
+    "-o",
+    "<out>",
+    "-c",
+    "--overwrite"
+  ],
+  "file_count": 21,
+  "files": {
+    "effects/xray/effect.json": "750bcc24ff01e676a02712fd843c41fdfecbf99cef098fc95497f145d0e53cf0",
+    "materials/dxt5.png": "b708d4e34181c551722491a8d68b6b2d79de3a041f3b79cb49728bed60c015e1",
+    "materials/dxt5.tex": "994f0bc922d757b69017e710bc6b694302053885fe285c6066e39fe07de6b370",
+    "materials/dxt5.tex-json": "9fdc8626adb31d4856b88dc242fcefeb360bd6df16b80eb8700f09bc2c189ecb",
+    "materials/overlay.png": "4a514c8de8924da394f88a6ec52297c15b8c1fa5303edb75130aee371ff97ee3",
+    "materials/puppet.json": "c22de8a4856ef6b52cee7779b6007661c974471d25f4d9299d596fd7053ff611",
+    "materials/puppet.png": "3b3ed6f3bb0597893f32508ed77d0983a88d1585833a40e81e0805f682d66300",
+    "materials/puppet.tex": "694c04e2143aa924ca9396ae73e851bed8e05c64521720a70ae54e68b07eb2c4",
+    "materials/puppet.tex-json": "be557b0f1876e760f90f2c40181f61f9027edad85ec44ba6b34db517eb22fc16",
+    "materials/quad.json": "2cb6214b50bd46f0c23efdf095adaecede877c9c8e03d93b9983b861d9724c54",
+    "materials/quad.png": "89849b04cf36643c24bc077a44a7c68de13ef0f633b5723665310ab02148b2e0",
+    "materials/quad.tex": "d1a3caf6be93fc3a1f57778a4d2e37b839ccb791d1bd023f88f1cd6a7af74551",
+    "materials/quad.tex-json": "be557b0f1876e760f90f2c40181f61f9027edad85ec44ba6b34db517eb22fc16",
+    "materials/xray.json": "45af9537bd2408ab67fdc69f3844a8a1d08146f143ff27908b4a8fc8f34723a2",
+    "models/puppet.json": "e2ec97153e2c573364c3e5aa36fb86268c3065afcf8135ccf8b5d1f44e8494de",
+    "models/puppet.mdl": "86c28758facc281df6b67d84b366622ce61b71fb507c88df84c7b8e57589999e",
+    "models/quad.json": "26ab98db5b2a7ce433238c858b9792d2423ba1e7552f308078eb57aaf0db04ab",
+    "project.json": "0352985805c1a9fb1a620c0885c383e73990960a85b7749e4d8c73b465d8b6bd",
+    "scene.json": "bf4a68df8b63e0f3f65c84c0151a3465ac6bcfd01133b2658d893c1546dfdb9f",
+    "shaders/xray.frag": "16ae0727a805509ba2cffb63f18881dee01125b045d31b8558265ce6f86b8e89",
+    "shaders/xray.vert": "5afede0b343e6634d32e63deee043104c3a0047594c833918069b2a74f4528b2"
+  },
+  "textures": {
+    "materials/quad.tex": {
+      "format": "rgba8888",
+      "width": 8,
+      "height": 8,
+      "expectation": "solid quadrant colors from generator"
+    },
+    "materials/puppet.tex": {
+      "format": "rgba8888",
+      "width": 8,
+      "height": 8,
+      "expectation": "left/right half colors incl. alpha=128 from generator"
+    },
+    "materials/dxt5.tex": {
+      "format": "dxt5",
+      "width": 4,
+      "height": 4,
+      "expectation": "solid RGB565 color expanded from endpoint"
+    }
+  },
+  "created": "2026-11-06",
+  "updated": "2026-11-06",
+  "verified_by": "bash tools/dev/baseline-verify.sh"
+}

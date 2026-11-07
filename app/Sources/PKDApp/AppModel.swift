@@ -115,13 +115,23 @@ final class AppModel: ObservableObject {
     @Published var storageItems: [StorageItem] = []
     @Published var storageSelection: Set<String> = []
     @Published var isScanningStorage = false
-    @Published var storageConfirmCount: Int?
+    /// 输出根范围告警（例如根被设成家目录 / 图片目录时给出）
+    @Published var storageRootWarnings: [String] = []
+    /// 确认面板对应的清理计划；非空时界面必须显示完整路径清单
+    @Published var pendingStoragePlan: CleanupPlan?
     @Published var storageResultMessage: String?
 
     let settings: SettingsStore
     let history: HistoryStore
     let log: LogSink
     let queue: JobQueue
+    /// 产物归属记录（应用私有，0600，不进入 Git）
+    let ownershipStore: OutputOwnershipStore
+    /// 清理审计日志（只含目录路径/大小/结果，不含任何图片内容）
+    let cleanupAudit: CleanupAuditLog
+    /// 本次导出目标目录的「导出前是否已存在」快照：只有导出前不存在的目录才登记为 owned，
+    /// 已存在的目录只登记 legacy 身份绑定（避免把用户预存目录接管为可清理产物）。
+    private var pendingExportTargets: [UUID: (url: URL, eligibility: ExportEligibility)] = [:]
     /// 日志检查器的控制器放在这里，菜单栏「清空日志」才能拿到它
     let logController = LogController()
 
@@ -167,6 +177,21 @@ final class AppModel: ObservableObject {
         self.history = history
         self.log = log
         self.queue = JobQueue(engineURL: nil, log: log)
+        // Only lifecycle wiring: remove abandoned PKD-temp directories from a
+        // previous crashed/KILLed instance. Unknown/recent/active dirs are kept.
+        queue.cleanupAbandonedTemporaryOutputs()
+
+        // 支持目录：正式版为 ~/Library/Application Support/PKD；开发副本落在隔离根目录。
+        let supportBase = DevelopmentEnvironment.root
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/PKD", isDirectory: true)
+        self.ownershipStore = OutputOwnershipStore(
+            fileURL: supportBase.appendingPathComponent(OutputOwnershipStore.defaultFileName)
+        )
+        self.cleanupAudit = CleanupAuditLog(
+            fileURL: supportBase.appendingPathComponent("CleanupAudit", isDirectory: true)
+                .appendingPathComponent("cleanup-audit.jsonl")
+        )
 
         queue.concurrency = max(1, settings.maxConcurrentJobs)
         queue.onFinished = { [weak self] job in
@@ -286,8 +311,13 @@ final class AppModel: ObservableObject {
 
     /// 冒烟测试钩子：`PKD_SMOKE_PKG=<pkg 绝对路径>` 启动时自动解包该包。
     /// 仅用于无 UI 自动化权限时的端到端验证，不影响正常使用。
+    ///
+    /// 数据安全：仅导出图片模式必须提供隔离的图片目录
+    /// （`PKD_SMOKE_IMAGE_ROOT` 或 `PKD_DEVELOPMENT_ROOT`），否则拒绝执行，
+    /// 避免自动化把测试产物写进正式用户的默认图片目录。
     private func runSmokeExtractionIfRequested() {
-        guard let path = ProcessInfo.processInfo.environment["PKD_SMOKE_PKG"], !path.isEmpty else {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment[TestEnvironmentIsolation.pkgKey], !path.isEmpty else {
             return
         }
 
@@ -296,12 +326,35 @@ final class AppModel: ObservableObject {
             guard let self else { return }
 
             let originalOutputRoot = self.settings.outputRoot
-            if let output = ProcessInfo.processInfo.environment["PKD_SMOKE_OUT"], !output.isEmpty {
-                self.settings.outputRoot = URL(fileURLWithPath: output)
+            let originalImageRoot = self.settings.imageExportRoot
+            defer {
+                self.settings.outputRoot = originalOutputRoot
+                self.settings.imageExportRoot = originalImageRoot
+            }
+
+            let decision = TestEnvironmentIsolation.decision(
+                exportImagesOnly: self.settings.exportImagesOnly,
+                environment: environment,
+                developmentRoot: DevelopmentEnvironment.root,
+                configuredImageRoot: originalImageRoot
+            )
+            switch decision {
+            case .refused(let reason):
+                let message = "冒烟导出已拒绝：\(reason)"
+                self.log.append(jobID: nil, text: message, kind: .warning)
+                self.alertMessage = message
+                return
+            case .allowed(let isolatedImageRoot):
+                if let isolatedImageRoot {
+                    self.settings.imageExportRoot = isolatedImageRoot
+                }
+                if !self.settings.exportImagesOnly,
+                   let output = environment[TestEnvironmentIsolation.outputRootKey], !output.isEmpty {
+                    self.settings.outputRoot = URL(fileURLWithPath: output)
+                }
             }
 
             guard let item = self.items.first(where: { $0.pkgURL?.path == path }) else {
-                self.settings.outputRoot = originalOutputRoot
                 self.alertMessage = "冒烟测试：素材库中未找到 \(path)"
                 return
             }
@@ -309,9 +362,6 @@ final class AppModel: ObservableObject {
             self.settings.confirmBeforeStart = false
             self.selection = [item.id]
             self.performExtraction([item])
-
-            // 冒烟钩子不应把临时输出目录写进用户设置
-            self.settings.outputRoot = originalOutputRoot
         }
     }
 
@@ -680,6 +730,18 @@ final class AppModel: ObservableObject {
             settings: settings,
             imageExportDestination: imageOnly ? settings.imageExportRoot : nil
         )
+        // 记录导出前可信快照：只有「新建目录」或「之前确实可信且未混入未知内容」的目录，
+        // 导出成功后才可以继续整目录可清理；其余保持只读。
+        for job in created {
+            let folder = OutputLayout.folderName(for: job.item)
+            let target = job.imageExportDestination?.appendingPathComponent(folder, isDirectory: true)
+                ?? OutputLayout.outputDirectory(for: job.item, root: settings.outputRoot)
+            let canonical = StorageScanner.canonicalPath(target)
+            let existingRecord = ownershipStore.ownedRecord(forCanonicalPath: canonical)
+            let eligibility = OutputOwnershipStore.exportEligibility(directory: target,
+                                                                     existingRecord: existingRecord)
+            pendingExportTargets[job.id] = (target, eligibility)
+        }
         if created.isEmpty {
             alertMessage = "所选项目都无法解包（缺少 pkg 或类型为视频）"
         }
@@ -687,6 +749,8 @@ final class AppModel: ObservableObject {
     }
 
     private func handleFinished(_ job: ExtractJob) {
+        // 无论成功/失败/取消都消费掉导出前快照，避免字典泄漏。
+        let preState = pendingExportTargets.removeValue(forKey: job.id)
         guard job.report != nil else { return }
         if case .cancelled = job.state { return }
 
@@ -711,6 +775,24 @@ final class AppModel: ObservableObject {
                 xrayCleanFile: job.xray.cleanFiles.first,
                 xrayLayerFile: job.xray.xrayFiles.first
             )
+            // 数据安全：记录本应用产物归属（只在当前输出根之下登记；失败不影响导出）。
+            // 只有导出前不存在的目录才登记 owned；已存在的目录只登记 legacy 身份绑定。
+            let allowedRoot = settings.exportImagesOnly
+                ? StorageScanner.canonicalPath(settings.imageExportRoot)
+                : StorageScanner.canonicalPath(settings.outputRoot)
+            if let preState {
+                let outcome = ownershipStore.recordAfterExport(
+                    directory: recordPath,
+                    itemID: job.item.id,
+                    allowedCanonicalRoots: [allowedRoot],
+                    eligibility: preState.eligibility
+                )
+                if case .rejected(let reason) = outcome {
+                    log.append(jobID: job.id,
+                               text: "警告：产物归属未登记（\(reason)），该目录将保持只读",
+                               kind: .warning)
+                }
+            }
             if settings.openFinderWhenDone {
                 NSWorkspace.shared.activateFileViewerSelecting([recordPath])
             }
@@ -847,7 +929,12 @@ final class AppModel: ObservableObject {
     // MARK: - 存储清理
 
     var selectedStorageItems: [StorageItem] {
-        storageItems.filter { storageSelection.contains($0.id) }
+        storageItems.filter { storageSelection.contains($0.id) && $0.isTrashable }
+    }
+
+    /// 可进入清理计划的条目（未知/只读条目永远不在其中）。
+    var storageTrashableItems: [StorageItem] {
+        storageItems.filter(\.isTrashable)
     }
 
     var selectedStorageBytes: Int64 {
@@ -862,6 +949,26 @@ final class AppModel: ObservableObject {
         storageItems.filter { $0.kind == kind }
     }
 
+    /// 输出根（规范化路径）。执行清理计划时会再次用于边界校验。
+    private func storageRoots() -> [String] {
+        [
+            StorageScanner.canonicalPath(settings.outputRoot),
+            StorageScanner.canonicalPath(settings.imageExportRoot),
+            StorageScanner.canonicalPath(FileManager.default.temporaryDirectory),
+        ]
+    }
+
+    private func storageRootMap() -> [String: String] {
+        [
+            "extract": StorageScanner.canonicalPath(settings.outputRoot),
+            "image": StorageScanner.canonicalPath(settings.imageExportRoot),
+        ]
+    }
+
+    private func auditItems(_ items: [StorageItem]) -> [CleanupAuditLog.Item] {
+        items.map { StorageScanner.auditItem($0) }
+    }
+
     func refreshStorage() {
         guard !isScanningStorage else { return }
         isScanningStorage = true
@@ -870,68 +977,112 @@ final class AppModel: ObservableObject {
         let imageRoot = settings.imageExportRoot
         // 输出目录被改过时，旧产物不在当前根目录下，靠历史记录把它们捞出来
         let historyPaths = history.entries.values.map { $0.outputPath }
+        let ownership = ownershipStore.snapshot(legacyPaths: historyPaths)
 
         Task { [weak self] in
             let scanned = await Task.detached(priority: .userInitiated) {
-                StorageScanner.scan(
+                StorageScanner.scanDetailed(
                     extractRoot: extractRoot,
                     imageRoot: imageRoot,
-                    historyPaths: historyPaths
+                    historyPaths: historyPaths,
+                    ownership: ownership
                 )
             }.value
 
             guard let self else { return }
-            self.storageItems = scanned
+            self.storageItems = scanned.items
+            self.storageRootWarnings = scanned.rootWarnings
+            // 只保留仍然可清理的选中项；未知/只读条目不会被带入确认流程
             self.storageSelection = self.storageSelection.filter { id in
-                scanned.contains { $0.id == id }
+                scanned.items.first(where: { $0.id == id })?.isTrashable == true
             }
             self.isScanningStorage = false
         }
     }
 
+    /// 生成清理计划并展示确认面板（面板列出完整路径、数量与总大小）。
     func requestTrashSelection() {
         let items = selectedStorageItems
         guard !items.isEmpty else { return }
-        storageConfirmCount = items.count
+
+        let plan = StorageScanner.makePlan(items: items, roots: storageRoots())
+        cleanupAudit.record(.request,
+                            planID: plan.id,
+                            items: auditItems(plan.items),
+                            roots: storageRootMap(),
+                            note: plan.rejections.isEmpty ? nil : "rejected=\(plan.rejections.count)")
+
+        guard !plan.items.isEmpty else {
+            pendingStoragePlan = nil
+            let reasons = plan.rejections.prefix(3)
+                .map { "\($0.path)：\($0.reason)" }
+                .joined(separator: "\n")
+            storageResultMessage = "所选目录的状态已变化，未生成清理计划。\n" + reasons
+            refreshStorage()
+            return
+        }
+        pendingStoragePlan = plan
     }
 
-    func performTrashSelection() {
-        let items = selectedStorageItems
-        guard !items.isEmpty else { return }
-
-        let extractRoot = settings.outputRoot
-        let imageRoot = settings.imageExportRoot
-        let extraAllowed = Set(history.entries.values.map { $0.outputPath })
-
-        let outcome = StorageScanner.trash(
-            items,
-            extractRoot: extractRoot,
-            imageRoot: imageRoot,
-            extraAllowed: extraAllowed
-        )
-
-        // 目录没了，历史记录里的「已解包」标记也要跟着失效
-        let trashedPaths = Set(outcome.trashed.map { $0.url.path })
-        let staleIDs = history.entries
-            .filter { trashedPaths.contains($0.value.outputPath) }
-            .map { $0.key }
-        for id in staleIDs {
-            history.remove(id: id)
+    /// 用户在确认面板取消（含直接关闭面板）。
+    func cancelStorageTrash() {
+        if let plan = pendingStoragePlan {
+            cleanupAudit.record(.cancelled,
+                                planID: plan.id,
+                                items: auditItems(plan.items),
+                                roots: storageRootMap())
+            storageResultMessage = "已取消，未移动任何文件"
         }
+        pendingStoragePlan = nil
+    }
+
+    /// 面板关闭回调：计划还在就说明是取消，而不是确认。
+    func storagePlanDismissed() {
+        if pendingStoragePlan != nil {
+            cancelStorageTrash()
+        }
+    }
+
+    /// 用户确认后执行：再次校验确认前快照（防替换/符号链接/状态变化），逐项移入废纸篓并记审计日志。
+    func performTrashSelection() {
+        guard let plan = pendingStoragePlan else { return }
+        pendingStoragePlan = nil
+
+        cleanupAudit.record(.confirmed,
+                            planID: plan.id,
+                            items: auditItems(plan.items),
+                            roots: storageRootMap())
+
+        let outcome = StorageScanner.execute(plan: plan,
+                                              audit: cleanupAudit,
+                                              currentRoots: storageRoots())
+
+        let trashedPaths = Set(outcome.trashed.map {
+            $0.identity?.canonicalPath ?? StorageScanner.canonicalPath($0.url)
+        })
+        // 目录没了，历史记录里的「已解包」标记也要跟着失效
+        let staleIDs = history.entries
+            .filter { trashedPaths.contains(StorageScanner.canonicalPath(URL(fileURLWithPath: $0.value.outputPath))) }
+            .map { $0.key }
+        for id in staleIDs { history.remove(id: id) }
+        ownershipStore.forget(canonicalPaths: Array(trashedPaths))
 
         storageSelection = []
         refreshStorage()
 
-        if outcome.failed.isEmpty {
-            storageResultMessage = "已把 \(outcome.trashed.count) 项移到废纸篓"
-        } else {
-            storageResultMessage = "已移入废纸篓 \(outcome.trashed.count) 项，"
-                + "\(outcome.failed.count) 项失败：\n" + outcome.failed.prefix(3).joined(separator: "\n")
+        var lines: [String] = ["已移入废纸篓 \(outcome.trashed.count) 项"]
+        if !outcome.skipped.isEmpty {
+            lines.append("跳过 \(outcome.skipped.count) 项（确认前后状态变化或已不存在）")
         }
+        if !outcome.failed.isEmpty {
+            lines.append("失败 \(outcome.failed.count) 项：")
+            lines.append(contentsOf: outcome.failed.prefix(3).map { "· \($0.path)：\($0.reason)" })
+        }
+        storageResultMessage = lines.joined(separator: "\n")
     }
 
     func selectAllStorage(_ kind: StorageItem.Kind?) {
-        let targets = kind.map { storageItems(of: $0) } ?? storageItems
+        let targets = kind.map { storageItems(of: $0).filter(\.isTrashable) } ?? storageTrashableItems
         storageSelection = Set(targets.map { $0.id })
     }
 }

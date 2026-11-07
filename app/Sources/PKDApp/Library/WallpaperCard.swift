@@ -124,10 +124,15 @@ struct WallpaperCard: View {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
-                .transition(.opacity)
+                .transition(thumbnailTransition)
         } else {
             placeholder
         }
+    }
+
+    /// 减少动态效果时缩略图直接出现，不做淡入。
+    private var thumbnailTransition: AnyTransition {
+        appearance.reducesMotion(system: accessibilityReduceMotion) ? .identity : .opacity
     }
 
     private var placeholder: some View {

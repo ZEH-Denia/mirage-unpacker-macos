@@ -145,6 +145,56 @@ public struct ExtractReport: Sendable {
         self.duration = duration
         self.outputFileCount = outputFileCount
     }
+
+    /// 面向用户/UI 的失败文案：非 0 退出必须带退出码和可分类原因，
+    /// 不把所有非 0 退出都笼统说成“包已损坏”。
+    public var failureMessage: String {
+        guard case .failed(let failure) = verdict else { return "" }
+        switch failure {
+        case .crashed:
+            return Self.crashedMessage(exitCode: exitCode, stderrTail: stderrTail)
+        default:
+            return failure.message
+        }
+    }
+
+    private static func crashedMessage(exitCode: Int32, stderrTail: [String]) -> String {
+        let text = stderrTail.joined(separator: "\n").lowercased()
+        if exitCode < 0 {
+            return "无法启动 repkg（引擎未运行）"
+        }
+        let code = "（退出码 \(exitCode)）"
+        if exitCode == 126 || exitCode == 127
+            || (text.contains("no such file or directory") && text.contains("repkg")) {
+            return "无法启动 repkg\(code)"
+        }
+        if text.contains("permission denied") || text.contains("operation not permitted")
+            || text.contains("read-only file system") {
+            return "权限不足或输出位置只读\(code)；请检查输出目录权限"
+        }
+        if text.contains("no space left on device") || text.contains("disk full")
+            || text.contains("not enough space") {
+            return "磁盘空间不足\(code)"
+        }
+        if text.contains("bad cpu type") || text.contains("not supported")
+            || text.contains("library not loaded") || text.contains("dyld") {
+            return "repkg 运行环境不兼容\(code)"
+        }
+        if exitCode == 137 {
+            return "repkg 被强制终止\(code)"
+        }
+        if exitCode == 143 {
+            return "repkg 被系统终止\(code)"
+        }
+        if exitCode == 134 || exitCode == 139 || exitCode == 133 {
+            return "repkg 异常终止\(code)，可能由损坏输入或引擎缺陷引起"
+        }
+        let firstLine = stderrTail.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        if let firstLine {
+            return "repkg 异常退出\(code)：\(firstLine.prefix(160))"
+        }
+        return "repkg 异常退出\(code)；stderr 未给出可分类原因"
+    }
 }
 
 /// 成败判定表。**这是本项目最核心的正确性逻辑**：

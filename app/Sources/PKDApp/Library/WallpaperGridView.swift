@@ -6,6 +6,7 @@ import PKDKit
 struct WallpaperGridView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,6 +90,8 @@ struct WallpaperGridView: View {
             TextField("搜索标题或 ID", text: $model.searchText)
                 .textFieldStyle(.plain)
                 .font(.callout)
+                // 只有 placeholder 时 VoiceOver 读不到稳定的控件名；补一个显式 label
+                .accessibilityLabel("搜索标题或 ID")
 
             if !model.searchText.isEmpty {
                 Button {
@@ -159,9 +162,20 @@ struct WallpaperGridView: View {
                     }
                 }
             }
-            .animation(.snappy(duration: 0.24), value: model.sort)
-            .animation(.snappy(duration: 0.2), value: appearance.density)
-            .animation(.snappy(duration: 0.2), value: model.isInspectorPresented)
+            .animation(sortAnimation, value: model.sort)
+            // 密度切换不做过场动画：实测（400 卡）它会制造 13–19 次 CA Stalls、
+            // CPU p95 从 ~48% 抬到 ~114%，因为每帧都要重排整屏卡片；
+            // 逐帧过渡并不比重排本身更容易看清。排序动画只有 1–3 次 Stalls，保留。
+            .animation(layoutAnimation, value: model.isInspectorPresented)
+            // 排序菜单本身用 `withAnimation` 提交变更（LibraryFilterBar），只把三个
+            // `.animation` 置空拦不住它。减少动态效果时，这里直接把网格子树的动画关掉，
+            // 否则「设置 → 动效 → 关闭」下卡片仍会做约 240ms 的重新排列过渡。
+            .transaction { transaction in
+                if motionReduced {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
             .padding(.horizontal, PKD.Layout.pageInset)
             .padding(.bottom, PKD.Space.l)
         }
@@ -170,6 +184,19 @@ struct WallpaperGridView: View {
                 emptyState
             }
         }
+    }
+
+    /// 减少动态效果时，网格的排序/密度/检查器重排不做过渡动画。
+    private var motionReduced: Bool {
+        appearance.reducesMotion(system: accessibilityReduceMotion)
+    }
+
+    private var sortAnimation: Animation? {
+        motionReduced ? nil : .snappy(duration: 0.24)
+    }
+
+    private var layoutAnimation: Animation? {
+        motionReduced ? nil : .snappy(duration: 0.2)
     }
 
     private var emptyState: some View {

@@ -5,15 +5,22 @@ public struct ProcessRequest: Sendable {
     public var arguments: [String]
     public var currentDirectory: URL?
     public var environment: [String: String]?
+    /// Run the executable under a small parent-death supervisor. This prevents a
+    /// SIGKILLed app from leaving the engine writing into its output directory:
+    /// a monitor process owns the engine, notices when the app-side wrapper is
+    /// gone, and terminates only that exact child. See `RealProcessRunner`.
+    public var superviseParentDeath: Bool
 
     public init(executable: URL,
                 arguments: [String],
                 currentDirectory: URL? = nil,
-                environment: [String: String]? = nil) {
+                environment: [String: String]? = nil,
+                superviseParentDeath: Bool = false) {
         self.executable = executable
         self.arguments = arguments
         self.currentDirectory = currentDirectory
         self.environment = environment
+        self.superviseParentDeath = superviseParentDeath
     }
 }
 
@@ -82,16 +89,22 @@ public final class RealProcessRunner: ProcessRunning, @unchecked Sendable {
                     onStdoutLine: @escaping @Sendable (String) -> Void,
                     onStderrLine: @escaping @Sendable (String) -> Void) async throws -> ProcessOutput {
         let process = Process()
-        process.executableURL = request.executable
-        process.arguments = request.arguments
+        if request.superviseParentDeath {
+            let launch = Self.supervisedLaunch(for: request)
+            process.executableURL = launch.executable
+            process.arguments = launch.arguments
+            process.environment = launch.environment
+        } else {
+            process.executableURL = request.executable
+            process.arguments = request.arguments
+            if let env = request.environment {
+                process.environment = env
+            }
+        }
         process.standardInput = FileHandle.nullDevice
         if let dir = request.currentDirectory {
             process.currentDirectoryURL = dir
         }
-        if let env = request.environment {
-            process.environment = env
-        }
-
         let outPipe = Pipe()
         let errPipe = Pipe()
         process.standardOutput = outPipe
@@ -204,6 +217,64 @@ public final class RealProcessRunner: ProcessRunning, @unchecked Sendable {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         return !process.isRunning
+    }
+
+    /// Wrapper/monitor scripts. The app's `Process` is the wrapper (`/bin/sh`);
+    /// the wrapper starts a monitor in a separate process, and the monitor is the
+    /// direct parent of the real engine. If the app is SIGKILLed, the wrapper is
+    /// killed too, the monitor is reparented to launchd, sees that its parent is
+    /// gone, and terminates only its own engine child. The monitor also forwards
+    /// SIGINT/SIGTERM for normal cancellation.
+    private static let supervisorMonitorScript = #"""
+wrapper="$1"; shift
+app="$1"; shift
+exe="$1"; shift
+child=""
+trap 'if [ -z "$child" ]; then /bin/sleep 0.1; fi; if [ -n "$child" ]; then /bin/kill -INT "$child" 2>/dev/null; /bin/sleep 0.1; /bin/kill -KILL "$child" 2>/dev/null; fi; exit 130' INT
+trap 'if [ -z "$child" ]; then /bin/sleep 0.1; fi; if [ -n "$child" ]; then /bin/kill -TERM "$child" 2>/dev/null; /bin/sleep 0.2; /bin/kill -KILL "$child" 2>/dev/null; fi; exit 143' TERM
+"$exe" "$@" &
+child=$!
+while :; do
+  ppid=$(/bin/ps -o ppid= -p "$wrapper" 2>/dev/null | /usr/bin/tr -d ' ')
+  if [ "$ppid" != "$app" ]; then
+    /bin/kill -TERM "$child" 2>/dev/null
+    /bin/sleep 0.2
+    /bin/kill -KILL "$child" 2>/dev/null
+    wait "$child" 2>/dev/null
+    exit 143
+  fi
+  state=$(/bin/ps -o stat= -p "$child" 2>/dev/null | /usr/bin/tr -d ' ')
+  if [ -z "$state" ] || [ "${state#Z}" != "$state" ]; then
+    wait "$child"
+    status=$?
+    exit $status
+  fi
+  /bin/sleep 0.05
+done
+"""#
+
+    private static let supervisorWrapperScript = #"""
+monitor="$PKD_SUPERVISOR_MONITOR"
+app="$PKD_SUPERVISOR_APP_PID"
+unset PKD_SUPERVISOR_MONITOR
+unset PKD_SUPERVISOR_APP_PID
+wrapper=$$
+exe="$1"; shift
+/bin/sh -c "$monitor" pkd-monitor "$wrapper" "$app" "$exe" "$@" &
+monitor_pid=$!
+trap '/bin/kill -INT "$monitor_pid" 2>/dev/null' INT
+trap '/bin/kill -TERM "$monitor_pid" 2>/dev/null' TERM
+wait "$monitor_pid"
+status=$?
+exit $status
+"""#
+
+    private static func supervisedLaunch(for request: ProcessRequest) -> (executable: URL, arguments: [String], environment: [String: String]) {
+        var environment = request.environment ?? ProcessInfo.processInfo.environment
+        environment["PKD_SUPERVISOR_MONITOR"] = supervisorMonitorScript
+        environment["PKD_SUPERVISOR_APP_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+        let arguments = ["-c", supervisorWrapperScript, "pkd-supervisor", request.executable.path] + request.arguments
+        return (URL(fileURLWithPath: "/bin/sh"), arguments, environment)
     }
 
     private static func readLoop(_ handle: FileHandle,

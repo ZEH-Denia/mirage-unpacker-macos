@@ -14,6 +14,7 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     private var updaterController: SPUStandardUpdaterController!
     private var manualCheckInProgress = false
     private var updateAttemptInProgress = false
+    private let recovery = UpdateRecoveryStore()
 
     private let releasesURL = URL(string: "https://github.com/ZEH-Denia/mirage-unpacker-macos/releases/latest")!
 
@@ -24,6 +25,44 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
             updaterDelegate: self,
             userDriverDelegate: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillTerminate(_:)),
+            name: NSApplication.willTerminateNotification,
+            object: nil
+        )
+        recoverPendingUpdateFailureIfNeeded()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Sparkle's final installation step runs in the separate Autoupdate
+    /// process. If it fails after this app has already terminated, no delegate
+    /// callback can reach us. The next launch compares the installed version
+    /// with a record written at Sparkle's documented install hand-off.
+    private func recoverPendingUpdateFailureIfNeeded() {
+        guard !DevelopmentEnvironment.isDevelopment else { return }
+        let info = Bundle.main.infoDictionary
+        let currentVersion = info?["CFBundleShortVersionString"] as? String ?? "0"
+        let currentBuild = info?["CFBundleVersion"] as? String ?? currentVersion
+        guard let notice = recovery.evaluateOnLaunch(
+            currentVersion: currentVersion,
+            currentBuild: currentBuild,
+            isAtLeast: Self.versionAtLeast
+        ) else { return }
+        failure = UpdateFailure(message: notice.message)
+    }
+
+    private static func versionAtLeast(_ current: String, _ target: String) -> Bool {
+        SUStandardVersionComparator.default.compareVersion(current, toVersion: target) != .orderedAscending
+    }
+
+    @objc private func applicationWillTerminate(_ notification: Notification) {
+        // Sparkle requests a normal Apple quit before installing. Only a clean
+        // termination is treated as evidence that installation was attempted.
+        recovery.markCleanTermination()
     }
 
     func checkForUpdates() {
@@ -38,6 +77,17 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
         updateAttemptInProgress = true
+    }
+
+    /// Called immediately before Sparkle hands the update to its installer
+    /// (after the user authorised installation). Persist the target so a failed
+    /// final replacement can be reported on next launch.
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        updateAttemptInProgress = true
+        recovery.recordInstallStart(
+            targetVersion: item.displayVersionString,
+            targetBuild: item.versionString
+        )
     }
 
     func updater(_ updater: SPUUpdater, failedToDownloadUpdate item: SUAppcastItem, error: Error) {
@@ -64,7 +114,13 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         let nsError = error as NSError
         let isNoUpdateAvailable = nsError.domain == SUSparkleErrorDomain && nsError.code == 1001
         let userCancelledInstallation = nsError.domain == SUSparkleErrorDomain && nsError.code == 4007
-        guard !isNoUpdateAvailable, !userCancelledInstallation else { return }
+        if userCancelledInstallation {
+            // The user explicitly declined installation at the authorization
+            // step; this is not a product failure.
+            recovery.clear()
+            return
+        }
+        guard !isNoUpdateAvailable else { return }
 
         if manualCheckInProgress || updateAttemptInProgress {
             presentFallback(for: error)
@@ -72,6 +128,9 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 
     private func presentFallback(for error: Error) {
+        // An in-process error is reported immediately; do not show it again on
+        // the next launch.
+        recovery.clear()
         guard failure == nil else { return }
 
         let details = error.localizedDescription

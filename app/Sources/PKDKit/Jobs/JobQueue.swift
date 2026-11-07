@@ -16,15 +16,25 @@ public final class JobQueue: ObservableObject {
 
     public var engineURL: URL?
     public var onFinished: ((ExtractJob) -> Void)?
+    /// Overridable only for isolated tests; production uses the user's temp dir.
+    public var temporaryBase: URL?
 
     public let log: LogSink
+    /// 本实例标识；用于区分同 PID 的旧实例临时目录。
+    public let instanceID = UUID()
+    private var temporaryLeases: [UUID: TemporaryOutputs.Lease] = [:]
     private var ticker: Timer?
-    private enum PreviewResult { case rendered, notNeeded, failed(String) }
+    private enum PreviewResult { case rendered(ScenePreviewReport), notNeeded, failed(String) }
     private var previewTasks: [UUID: Task<PreviewResult, Never>] = [:]
 
-    public init(engineURL: URL?, log: LogSink) {
+    public init(engineURL: URL?, log: LogSink, temporaryBase: URL? = nil) {
         self.engineURL = engineURL
         self.log = log
+        self.temporaryBase = temporaryBase
+    }
+
+    private var temporaryRoot: URL {
+        TemporaryOutputs.root(base: temporaryBase ?? FileManager.default.temporaryDirectory)
     }
 
     // MARK: - 队列操作
@@ -39,16 +49,30 @@ public final class JobQueue: ObservableObject {
             guard var request = settings.makeRequest(for: item) else { continue }
 
             if let destination = imageExportDestination {
-                // 仅导出图片：解包到临时目录，导出后清理
-                let temp = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("PKD-extract-\(UUID().uuidString)", isDirectory: true)
-                try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
-                request.outputDirectory = temp
+                // 仅导出图片：解包到 PKD-temp 下的带 owner 锁的临时目录。
+                // 锁在进程存活期间持有；SIGKILL 后由内核释放，启动 janitor 只清理
+                // 陈旧且无锁的目录（详见 TemporaryOutputs）。
+                let lease = TemporaryOutputs.makeLease(
+                    root: temporaryRoot,
+                    jobID: UUID(),
+                    instanceID: instanceID
+                )
+                if let lease {
+                    request.outputDirectory = lease.directory
+                } else {
+                    // 隔离根创建失败时保留旧的兜底路径；该目录没有 owner 标记，
+                    // janitor 不会扫描/删除它。
+                    let fallback = temporaryRoot
+                        .appendingPathComponent("PKD-extract-\(UUID().uuidString)", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
+                    request.outputDirectory = fallback
+                }
 
                 let job = ExtractJob(item: item, request: request)
-                job.temporaryOutput = temp
+                job.temporaryOutput = request.outputDirectory
                 job.imageExportDestination = destination
                 job.imageConflictPolicy = settings.imageConflictPolicy
+                if let lease { temporaryLeases[job.id] = lease }
                 jobs.append(job)
                 created.append(job)
             } else {
@@ -68,7 +92,11 @@ public final class JobQueue: ObservableObject {
         if job.state == .queued {
             job.state = .cancelled
             job.endedAt = Date()
-            if let temp = job.temporaryOutput { try? FileManager.default.removeItem(at: temp) }
+            if let lease = temporaryLeases.removeValue(forKey: jobID) {
+                lease.release()
+            } else if let temp = job.temporaryOutput {
+                try? FileManager.default.removeItem(at: temp)
+            }
             pump()
             return
         }
@@ -136,7 +164,9 @@ public final class JobQueue: ObservableObject {
 
     private func execute(_ job: ExtractJob) async {
         defer {
-            if let temp = job.temporaryOutput {
+            if let lease = temporaryLeases.removeValue(forKey: job.id) {
+                lease.release()
+            } else if let temp = job.temporaryOutput {
                 try? FileManager.default.removeItem(at: temp)
             }
         }
@@ -234,7 +264,7 @@ public final class JobQueue: ObservableObject {
             if !cancellationRequested, attempt == 0, case .failed(let failure) = report.verdict,
                failure == .crashed || failure == .missingDoneSentinel {
                 attempt += 1
-                logSink.append(jobID: jobID, text: "首次失败（\(failure.message)），自动重试一次…", kind: .warning)
+                logSink.append(jobID: jobID, text: "首次失败（\(report.failureMessage)），自动重试一次…", kind: .warning)
                 continue
             }
 
@@ -264,7 +294,10 @@ public final class JobQueue: ObservableObject {
                         logSink.append(jobID: jobID, text: "正在渲染实验性静态预览…", kind: .marker)
                         let workDirectory = job.request.outputDirectory
                         let task = Task.detached(priority: .userInitiated) { () -> PreviewResult in
-                            do { return try ExperimentalPuppetPreview.render(in: workDirectory) ? .rendered : .notNeeded }
+                            do {
+                                let outcome = try ExperimentalPuppetPreview.renderDetailed(in: workDirectory)
+                                return outcome.rendered ? .rendered(outcome.report) : .notNeeded
+                            }
                             catch { return .failed(error.localizedDescription) }
                         }
                         previewTasks[jobID] = task
@@ -280,7 +313,8 @@ public final class JobQueue: ObservableObject {
                         }
                         let warning: String?
                         switch result {
-                        case .rendered: warning = "场景预览为实验性静态姿态，脚本、时钟、粒子、动画与特殊效果可能未包含"
+                        case .rendered(let report):
+                            warning = "场景预览为实验性静态姿态（\(report.summary)）；脚本、时钟、粒子与动画未包含"
                         case .notNeeded: warning = nil
                         case .failed(let error): warning = "实验性场景预览未完成：\(error)；已保留可导出的素材"
                         }
@@ -345,8 +379,8 @@ public final class JobQueue: ObservableObject {
                 ))
             case .cancelled:
                 job.state = .cancelled
-            case .failed(let failure):
-                job.state = .failed(failure.message)
+            case .failed:
+                job.state = .failed(report.failureMessage)
             }
 
             job.endedAt = Date()
@@ -418,6 +452,16 @@ public final class JobQueue: ObservableObject {
         guard activeCount == 0 else { return }
         ticker?.invalidate()
         ticker = nil
+    }
+
+    /// 启动时清理本 app 专属临时根中陈旧且无锁的目录。
+    /// 只处理 `TemporaryOutputs.root()` 下的带有效 owner 标记目录；
+    /// 未知 owner、近期目录、活跃实例持有 flock 的目录一律保留。
+    public func cleanupAbandonedTemporaryOutputs() {
+        _ = TemporaryOutputs.cleanupAbandoned(
+            root: temporaryRoot,
+            currentInstanceID: instanceID
+        )
     }
 
     /// 退出时同步终止所有子进程（否则残留 repkg 会继续写 GB 级文件）。

@@ -160,7 +160,8 @@ public final class RepkgSession: @unchecked Sendable {
         let processRequest = ProcessRequest(
             executable: executable,
             arguments: request.arguments(),
-            currentDirectory: existingDirectory
+            currentDirectory: existingDirectory,
+            superviseParentDeath: true
         )
 
         let output: ProcessOutput
