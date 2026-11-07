@@ -45,6 +45,10 @@ struct NavigationSidebar: View {
             }
         }
         .tag(item)
+        // List(selection:) 的选中态经 AX 不跟随 model.nav（实测切换筛选后 AXSelected
+        // 仍停在「全部」），VoiceOver 因此不会把当前页读成「已选择」。用显式 trait
+        // 把当前导航项的语义补齐；视觉高亮仍由 List 负责。
+        .accessibilityAddTraits(model.nav == item ? .isSelected : [])
     }
 
     /// 取消选择时保持当前页，避免内容区变空白

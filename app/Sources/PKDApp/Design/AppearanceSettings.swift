@@ -63,13 +63,12 @@ final class AppearanceSettings: ObservableObject {
     }
 
     enum Density: String, CaseIterable, Identifiable {
-        case compact, standard, comfortable
+        case compact, standard
         var id: String { rawValue }
         var label: String {
             switch self {
             case .compact: return "紧凑"
             case .standard: return "标准"
-            case .comfortable: return "宽松"
             }
         }
     }
@@ -179,7 +178,6 @@ final class AppearanceSettings: ObservableObject {
         switch density {
         case .compact: return 2
         case .standard: return 6
-        case .comfortable: return 10
         }
     }
 
@@ -188,7 +186,6 @@ final class AppearanceSettings: ObservableObject {
         switch density {
         case .compact: return 160
         case .standard: return PKD.Size.gridMin
-        case .comfortable: return 230
         }
     }
 
@@ -202,7 +199,6 @@ final class AppearanceSettings: ObservableObject {
         switch density {
         case .compact: return 10
         case .standard: return 16
-        case .comfortable: return 22
         }
     }
 
@@ -220,7 +216,6 @@ final class AppearanceSettings: ObservableObject {
         switch density {
         case .compact: return 12
         case .standard: return 16
-        case .comfortable: return 20
         }
     }
 

@@ -22,7 +22,7 @@ struct LibraryFilterBar: View {
 
             Spacer(minLength: PKD.Space.xs)
 
-            densityMenu
+            densityButton
         }
         .padding(.horizontal, PKD.Layout.pageInset)
         .padding(.bottom, PKD.Space.xs)
@@ -57,27 +57,20 @@ struct LibraryFilterBar: View {
 
     // MARK: - 密度
 
-    private var densityMenu: some View {
-        Menu {
-            ForEach(AppearanceSettings.Density.allCases) { density in
-                Button {
-                    appearance.density = density
-                } label: {
-                    if appearance.density == density {
-                        Label(density.label, systemImage: "checkmark")
-                    } else {
-                        Text(density.label)
-                    }
-                }
-            }
+    private var densityButton: some View {
+        let currentDensity = appearance.density
+        let nextDensity: AppearanceSettings.Density = currentDensity == .standard ? .compact : .standard
+        return Button {
+            appearance.density = nextDensity
         } label: {
-            chip(icon: "square.grid.3x3", text: nil)
+            chip(icon: currentDensity == .standard ? "square.grid.2x2" : "square.grid.3x3", text: nil)
+                .modifier(ChipSurface())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
         .fixedSize()
-        .modifier(ChipSurface())
-        .help("网格密度：\(appearance.density.label)（与设置里的「界面密度」同步）")
+        .accessibilityLabel("网格密度")
+        .accessibilityValue(currentDensity.label)
+        .help("当前：\(currentDensity.label)。点击切换为\(nextDensity.label)")
     }
 
     // MARK: - 共用外观

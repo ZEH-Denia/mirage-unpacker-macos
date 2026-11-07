@@ -11,7 +11,7 @@ launched app):
     S1  big-library first load + idle baseline
     S2  continuous scrolling (20 down / 20 up / 6 back-and-forth rounds)
     S3  24-step window resizing across four sizes
-    S4  grid density switching (compact / standard / comfortable)
+    S4  grid density switching (compact / standard)
     S5  sort switching (title A-Z / size desc / id asc / size asc)
     S6  inspector toggling (cmd-opt-L and the toolbar button)
     S7  appearance matrix (theme x font scale x thumbnails) with a short scroll
@@ -1473,11 +1473,21 @@ def _calm(pid: int, seconds: float = 1.2) -> None:
 DENSITY_MENU = "正方形网格，三乘三"
 
 
+def select_density(pid: int, title: str) -> None:
+    buttons = ax_find_all(qa.ax_app(pid), role="AXButton", contains="网格密度", limit=1)
+    if buttons:
+        button = buttons[0]
+        if qa.ax_value(button, "AXValue") != title:
+            qa.ax_press(button)
+    else:
+        choose_menu_item(pid, button_title=DENSITY_MENU, item_title=title)
+
+
 def scenario_S4(ctx: Context, switches=None, label_prefix="S4") -> dict:
     tag = "S4"
     root, process, prep = prepare(ctx, tag, need_mouse=False)
     payload = {"prep": prep, "switches": []}
-    switches = switches or [("紧凑", "compact"), ("标准", "standard"), ("宽松", "comfortable")]
+    switches = switches or [("紧凑", "compact"), ("标准", "standard")]
     try:
         qa.activate(process.pid)
         time.sleep(0.8)
@@ -1488,11 +1498,9 @@ def scenario_S4(ctx: Context, switches=None, label_prefix="S4") -> dict:
         with Monitor(process.pid, 0.05) as monitor:
             for item_title, key in switches:
                 _calm(process.pid, 1.2)
-                # reopening the menu needs the *current* title, which is stable here
                 switch = measure_switch(
                     ctx, process.pid, f"{label_prefix}-{key}",
-                    lambda title=item_title: choose_menu_item(
-                        process.pid, button_title=DENSITY_MENU, item_title=title),
+                    lambda title=item_title: select_density(process.pid, title),
                     settle=1.2, monitor=monitor)
                 switch["density"] = key
                 switch["cardsAfter"] = len(visible_cards(process.pid))
@@ -1502,11 +1510,10 @@ def scenario_S4(ctx: Context, switches=None, label_prefix="S4") -> dict:
         payload["cpuAll"] = stats([s["cpuPercent"] for s in monitor.samples])
         payload["monitor"] = monitor.summary()
         payload["footprint"] = footprint_crosscheck(process.pid)
-        cycle = ("紧凑", "标准", "宽松")
+        cycle = ("紧凑", "标准")
 
         def _switch(index: int) -> None:
-            choose_menu_item(process.pid, button_title=DENSITY_MENU,
-                             item_title=cycle[index % 3])
+            select_density(process.pid, cycle[index % len(cycle)])
 
         payload["sample"] = sample_while(ctx, process.pid, "density-switch", _switch)
     except Exception as error:
@@ -1811,8 +1818,7 @@ def scenario_S9(ctx: Context, minutes: float = 4.0) -> dict:
                 elif phase == 0:
                     # synthetic wheel input is unavailable: use an AX density
                     # switch instead so each cycle still changes the grid
-                    choose_menu_item(process.pid, button_title=DENSITY_MENU,
-                                     item_title=("紧凑", "标准", "宽松")[cycle % 3])
+                    select_density(process.pid, ("紧凑", "标准")[(cycle // 4 - 1) % 2])
                 elif phase == 1:
                     choose_menu_item(process.pid, button_prefix="排序：",
                                      item_title=SORT_SEQUENCE[cycle % len(SORT_SEQUENCE)][0])

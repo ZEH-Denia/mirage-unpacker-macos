@@ -239,7 +239,11 @@ struct WallpaperGridView: View {
         let flags = NSEvent.modifierFlags
         let isCommand = flags.contains(.command)
         let isShift = flags.contains(.shift)
-        let isDoubleClick = NSApp.currentEvent?.clickCount == 2
+        // 只在鼠标事件上读取 clickCount：键盘触发的选中（Space/Return）不是鼠标事件，
+        // 在 keyDown 上取 clickCount 会抛 ObjC 异常，SwiftUI 吞掉后整段选中逻辑都不执行。
+        let currentEvent = NSApp.currentEvent
+        let isMouseEvent = currentEvent?.type == .leftMouseDown || currentEvent?.type == .leftMouseUp
+        let isDoubleClick = isMouseEvent && currentEvent?.clickCount == 2
 
         if isDoubleClick, item.isExtractable {
             model.markVisited(item)

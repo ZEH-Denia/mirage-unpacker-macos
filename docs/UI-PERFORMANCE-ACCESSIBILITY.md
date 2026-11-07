@@ -166,7 +166,7 @@ HID 鼠标/滚轮事件被它吞掉，开发副本也不能稳定成为前台。
 | K9 大库键盘遍历（3 项） | PASS 1 · UNVERIFIED 1 · FAIL 1 | 45 次 Tab 全部在网格内推进（每次 p50 一致）；焦点随滚动入视口无法在 HID 滚轮被吞的环境下验证；AX 顺序与视觉顺序在第 6 项起不一致（第 6 张卡在 AX 中缺失/后移），需前台复测确认是否只是 LazyVGrid 视口边界。 |
 | K10 崩溃（1 项） | PASS | 验收期间开发副本无崩溃；`~/Library/Logs/DiagnosticReports` 无本 build 的 PKD 崩溃记录。 |
 
-**没有做 VoiceOver 实际朗读**：不擅自修改 TCC/系统辅助功能偏好，且本机前台被第三方全屏浮层占据；
+**1.8.1 时没有做 VoiceOver 实际朗读**（当时前台被第三方全屏浮层占据，未改 TCC）。**1.8.2 已补做并实测通过，见 §12.4。** 原说明：
 K1/K9 只证明 AX 语义与顺序，不能替代 VoiceOver 朗读验收。
 
 ### 6.1 修复后复检（fixed2，`app/.build/ui-qa/evidence/a11y/fixed2-2206/`）
@@ -174,13 +174,13 @@ K1/K9 只证明 AX 语义与顺序，不能替代 VoiceOver 朗读验收。
 | 项 | 结果 | 细节 |
 | --- | --- | --- |
 | K1 搜索框可读名 | **PASS** | `AXDescription = 搜索标题或 ID`（连同 placeholder 一起）；抽查卡片/工具栏/菜单/侧栏/检查器/空状态无回归（11/11） |
-| K3 Space/Return | **FAIL（复现，非投递问题）** | 焦点确在卡片（AXFocusedUIElement 就是该卡，焦点环像素有变化）；Space 后已选仍 0、焦点不动、未滚动、检查器未开；Return 同样；**同一焦点状态发 ⌘2 → 页面切到「可解包 · 384 项」= 事件到达 App**。与最小 SwiftUI 探针（纯 Text / ScrollView+LazyVGrid 同组修饰符，非前台，PostToPid 均能触发 `.onKeyPress`）对照，问题在真 App 卡片修饰符链/容器组合，不在后台状态或事件通道。根因未定位，本轮未盲改。 |
+| K3 Space/Return | **1.8.2 已修复并在真实前台复验 PASS（§12.2）** | 1.8.1 记录：焦点在卡片时 Space/Return 后已选仍 0、焦点不动、未滚动；⌘2 生效排除事件通道。1.8.2 定位到 `handleTap` 对键盘事件读 `NSEvent.clickCount` 抛异常被 SwiftUI 吞掉；已改为只在鼠标事件上读 clickCount。前台复验：Tab→Space 选中卡片 0001、再 Tab→Return 选中 0002；双击仍弹「确认解包」；单击/⌘加选/⌘取消/⇧区间均通过。 |
 | K3 ⌘↩ / ⌥⌘L / ⌘1–⌘6 | PASS | 确认框 + 产物只落 dev root；`~/Pictures` 前后一致；⌘6→存储、⌘5→队列（页面内容判定） |
 | K4 多选 | **PASS 4/4** | 单击 1 → ⌘点 2 → 再 ⌘点回 1（取消成功）；⇧ 连选 3；标题与 AX 选中一致 |
 | K6 快捷键 | PASS 3/3 | ⇧⌘O / ⇧⌘R enabled 状态正确；实际发键后 App 存活、AX 仍响应 |
 | K10 崩溃 | PASS | 4 次运行均正常退出 |
 
-**未验证**：VoiceOver 实际朗读（K8）、键盘遍历与阅读顺序（K9，环境/时间）、macOS 14 真机。
+**未验证（1.8.1 当时）**：VoiceOver 实际朗读、键盘遍历/阅读顺序、macOS 14 真机。其中 VoiceOver 朗读、侧栏当前位置、跨视口遍历已在 1.8.2 前台补做（§12.4）；macOS 14 真机仍未验证。
 
 ## 7. 系统兼容
 
@@ -228,7 +228,7 @@ K1/K9 只证明 AX 语义与顺序，不能替代 VoiceOver 朗读验收。
    `LibraryFilterBar`，建议 `.accessibilityLabel("网格密度：\(appearance.density.label)")`。
 4. **系统 inspector 列过渡**：动效关闭时检查器开合仍有约 150 ms 的列宽过渡，由
    `NavigationSplitView` 驱动，App 侧无法用 `.animation`/`.transaction` 关闭（§5.4）。
-5. **Space/Return 不激活卡片**（已复现的 FAIL，根因未定位）：fixed2 上用 AX 描述重新定位卡片，
+5. ~~**Space/Return 不激活卡片**~~ **已定位并修复**（2026-11-07，1.8.2）：根因是 `handleTap` 对键盘事件读取 `NSEvent.clickCount` 抛异常被 SwiftUI 吞掉；修复为只在鼠标事件上读 clickCount，前台复验 Tab→Space/Return、双击、单击/⌘/⇧ 全部通过（§12.2）。原记录：：fixed2 上用 AX 描述重新定位卡片，
    焦点确在卡片（AXFocusedUIElement 为该卡、焦点环像素变化），Space/Return 后已选仍 0、焦点不动、
    未滚动；同一焦点状态 ⌘2 生效 → 事件到达 App。最小 SwiftUI 探针（纯 Text、以及
    ScrollView+LazyVGrid+同组修饰符）在非前台、PostToPid 投递下 `.onKeyPress` 均正常触发，
@@ -238,7 +238,7 @@ K1/K9 只证明 AX 语义与顺序，不能替代 VoiceOver 朗读验收。
    记为待复测，不当作已确认缺陷。
 7. **滚动相关指标未取得**：HID 滚轮被用户全屏浮层吞掉，缩略图反复解码/滚动平滑度
    **未验证**；因此 `ThumbnailLoader` 未改动（没有证据就不动）。
-8. **VoiceOver 实际朗读未验证**：不改 TCC/系统偏好，见 §6。
+8. ~~**VoiceOver 实际朗读未验证**~~ **1.8.2 已实测通过（字幕面板）**，见 §12.4；欢迎首用已过、未改 TCC/系统偏好。
 9. **macOS 14 真机未验证**：见 §7。
 
 ## 10. 证据索引（全部在 git 忽略的 `.build/` 内，不含个人素材）
@@ -285,3 +285,141 @@ python3 -u tools/dev/accessibility-audit.py --app "app/.build/ui-qa/app/PKD QA f
 
 注意：脚本要求 bundle id 为 `com.zeh.pkd.development` 且通过 `PKD_DEVELOPMENT_ROOT` 指定隔离根目录；
 不会启动 `/Applications/PKD.app`。GUI 驱动会串行持有目录锁；同一时刻只应有一个脚本在跑。
+
+## 12. 1.8.2 前台交互验收补充（2026-11-07）
+
+本轮在正式 1.8.2 构建上补做真实前台验收。用户明确授权本轮独占前台，不等待授权；未强关任何
+用户应用，未改 TCC/系统偏好，未截整屏，未触碰个人素材或废纸篓内容。
+
+### 12.1 构建身份与环境
+
+| 项 | 值 |
+| --- | --- |
+| 仓库 | `main` `8f81353`（工作树干净；本轮只改 1 个 UI 文件，未提交） |
+| 版本 | 1.8.2（`VERSION`/Info.plist 均为 1.8.2） |
+| 未修改构建 | `app/.build/ui-qa/app/PKD QA 182.app`（从 `swift build -c release` 的 1.8.2 产物装配，bundle id `com.zeh.pkd.development`） |
+| 修复后构建 | `app/.build/ui-qa/app/PKD QA 182 fixed.app`（只含 §12.3 的 clickCount 修复；未签名二进制 SHA-256 `88d4cb54…`） |
+| 宿主 | macOS 27.3 / arm64 / M4 Pro / AC |
+| 隔离 | 每个场景 `PKD_DEVELOPMENT_ROOT` 指向 `app/.build/ui-qa/runs/run-*`，素材为 60/400 张生成占位卡；导出目录固定在隔离 root 的 `Images/` |
+
+真实前台输入在本轮可用：HID 点击、Tab/字符键、滚轮都能送达开发副本（`scrollInput.changed=true`）。
+未修改正式 `/Applications/PKD.app`，未启动正式应用。
+
+### 12.2 发现并修复的产品缺陷：Space/Return 不激活聚焦卡片
+
+**复现（修复前，1.8.2）**：Tab 把焦点移到卡片（AXFocusedUIElement 为该卡），按 Space 后
+「已选」仍为 0、焦点不动、不滚动；同一焦点状态发 ⌘2 生效（事件到达 App）。加临时日志后
+（仅诊断构建，已还原）确认：卡片的 `.onKeyPress` **被调用**，`handleTap` 进入后只执行到第一行，
+后续选中逻辑整段不执行。
+
+**根因**：`handleTap` 无条件执行 `NSApp.currentEvent?.clickCount == 2`。键盘触发的选中不是鼠标
+事件；在 keyDown 上读取 `clickCount` 会抛 ObjC 异常，SwiftUI 吞掉异常后该次回调剩余代码全部
+跳过。最小 SwiftUI 探针复现：`A` → `B evt=10(keyDown)` 之后 `clickCount` 处中断。
+
+**修复**（`app/Sources/PKDApp/Library/WallpaperGridView.swift`，仅此一处）：
+
+```swift
+// 只在鼠标事件上读取 clickCount：键盘触发的选中（Space/Return）不是鼠标事件，
+// 在 keyDown 上取 clickCount 会抛 ObjC 异常，SwiftUI 吞掉后整段选中逻辑都不执行。
+let currentEvent = NSApp.currentEvent
+let isMouseEvent = currentEvent?.type == .leftMouseDown || currentEvent?.type == .leftMouseUp
+let isDoubleClick = isMouseEvent && currentEvent?.clickCount == 2
+```
+
+**修复后验证**（真实 HID 键盘/鼠标）：
+
+| 操作 | 结果 | 证据 |
+| --- | --- | --- |
+| Tab 到卡片 → Space | 选中该卡（已选 1 → 对应卡片） | `foreground-1.8.2/interaction-final.json` |
+| 再 Tab → Return | 选中新聚焦卡片 | 同上 |
+| 双击卡片 | 选中该卡并弹出「确认解包」 | `foreground-1.8.2/double-click3.json` |
+| 单击 / ⌘点击加选 / 再 ⌘点击取消 / ⇧区间 | 1 → 2 → 1 → 2（区间两项） | `foreground-1.8.2/interaction-final.json` |
+| 无键盘焦点时移动鼠标/点击 | 行为与修复前一致（未改点击路径） | 同上 |
+
+### 12.3 前台验收结果
+
+| 项 | 结果 | 关键观察 / 证据 |
+| --- | --- | --- |
+| 真实键盘搜索 | **PASS** | Tab 到搜索框，键入 `Synthetic` → `12 项 · 搜索「Synthetic」`；⌘A+Delete → `60 项`（`interaction.json`） |
+| Tab / Space / Return 卡片激活 | **PASS（修复后）** | 见 §12.2；修复前为 FAIL |
+| ⌘ 多选 / ⇧ 连选 | **PASS** | 真实 flagsChanged + 鼠标事件：加选 2 项、再点取消 1 项、⇧ 选区间 2 项（`interaction-final.json`） |
+| 详情关闭（窄窗） | **PASS** | 900 宽点击卡片出现面板（关闭详情按钮），Esc 关闭，AX 中按钮消失（`mouse-inspector-sheet.json`） |
+| ⌘↩ 导出 + 确认清单 | **PASS** | 确认框含隔离目录绝对路径；确认后 `Images/<标题>_<id>/` 产出 2 个 PNG + `.pkd-output.json`（`export2.json`） |
+| 结果浏览器 | **PASS** | 详情「查看图片」打开画廊，有上一张/下一张；键盘切换与缩放后 Esc 关闭（`gallery-storage.json`） |
+| 存储页确认清单 | **PASS** | 头部「可清理 1 项，1 项只读」；只读条目不可选；确认面板列出待移动目录与「取消不会移动任何文件」；仅选中应用自产目录（`storage5.json`） |
+| Esc 取消清理 | **PASS** | 关闭面板后目录仍存在，提示「已取消，未移动任何文件」（`storage3.json`） |
+| Return 不误清理 | **PASS** | 确认面板打开时按 Return：面板保持、目录未移动（`storage4.json`） |
+| 确认后移动范围 | **PASS（隔离目录）** | 仅 `Images/<应用自产目录>` 被移动；同页只读目录仍存在；清理审计事件 `request→confirmed→item_result→completed`（`storage5.json`、`CleanupAudit/cleanup-audit.jsonl`） |
+| 队列筛选 | **PASS** | 分段「全部/未结束/需处理/已结束」可切换，选中值随点击变化，列表按状态过滤（`queue2.json`） |
+| 拖放导入 | **PASS** | 合成 `.pkg` 拖入：`operation=1`，60→61 项并选中导入项；源文件 SHA-256 与素材库原文件一致（`drag2.json`） |
+| 收藏 + 重启持久化 | **PASS** | `History/collections.json` 写入 `favorites:["900000"]`；「收藏」页 1 项；重启后仍 1 项（`queue-favorites.json`） |
+| 初始化加载 / idle | **PASS** | 400 卡 idle CPU p50 0.18% / p95 0.39%、footprint 94.5 MB、线程 9、CA 提交 1 / Stalls 0 |
+| 真实滚轮 | **PASS（输入）** | 滚轮使可见卡片变化（`scrollInput.changed=true`）；CPU p95 20%（去）/6.5%（回），CA 提交 71/63、Stalls 0（`perf-1736/result.json`） |
+| 连续缩放窗口 | 代理达标 | CPU p95 95%、最差 102%；CA 提交 198、**Stalls 9** |
+| 排序切换（4 次） | 代理达标 | CPU p95 88%、最差 162%；CA 提交 501、Stalls 6 |
+| 密度切换（5 次） | 代理改善 | CPU p95 72%、最差 215%；CA 提交 334、Stalls 6（1.8.1 时单次 13–15，已去动画） |
+| 检查器开关（4 次） | 代理偏重 | CPU p95 84%、最差 92%；CA 提交 166、**Stalls 45**（系统 inspector 列过渡，见 §5.4/§9.4） |
+| 前台 90 秒混合操作（滚动/选择/检查器） | **PASS（无增长）** | footprint 221.4 → 207.0 MB，峰值 221.6 MB，无单调增长（`perf-1736/result.json` soak） |
+| VoiceOver 实际朗读 | **PASS（字幕面板实测，非音频）** | 卡片标题/已选择/按钮角色、搜索框、侧栏行、跨行遍历均读到；见 §12.4 |
+
+度量口径不变：CA `Transaction.Stalls` 是**掉帧信号**，CPU/内存为真实进程指标；本机没有
+Instruments，**不宣称呈现帧率**。
+
+### 12.4 VoiceOver 实际朗读验收（通过）与侧栏选中语义修复
+
+**启用方式（系统正常 UI）**：`Command-Fn-F5` 调出 VoiceOver 首次使用欢迎窗；读取欢迎窗后点
+「使用旁白」（未勾选「不再显示此信息」，未按空格进入教程）。VoiceOver 启动成功，日志出现
+CoreAudio 播放队列；未申请任何新 TCC，未用脚本写/删系统偏好。
+
+**观察方式（真实朗读，不用 AX 树冒充）**：VoiceOver 自带的**字幕面板**（默认已开启）是
+独立窗口（owner = VoiceOver）。每步只捕获该字幕窗口（窗口级，非全屏），再用本机 Vision OCR
+转录其文本；原文截图保存在 `app/.build/ui-qa/evidence/vo/`。以下为实际转录（节选）：
+
+| 操作 | 实际字幕文本 |
+| --- | --- |
+| 启动/侧栏 | `PKD，PKD 开发预览，窗口 边栏，表格，第2行（共10行） 全部 60，已选择，有键盘焦点` |
+| 状态摘要 | `58 个可解包 · 986 KB` |
+| 工具栏/标题 | `素材库`；`搜索，图像`；`搜索标题或 ID，编辑文本`；`排序：标题 A-Z，菜单按钮`；`打开壁纸包…，按钮`；`正方形网格，三乘三，菜单按钮` |
+| 点击卡片 | `抽象渐变占位 0003（不含真实素材），场景，17 KB，可解包，未解包，不含 X-Ray，已选择，按钮` |
+| 键盘切卡 | `抽象渐变占位 0008…按钮` → `…0013…` → `…0018…`（Tab/Space/Return 后焦点与选中正确） |
+| 网格跨行 | 连续 VO-Right：`0033 → 0058 → 很长很长…占位标题 0024`，可见首卡由 `0003` 变为长标题卡，网格自动滚动 |
+| 切换筛选后侧栏 | `可解包•58 项•已选 1`（当前筛选行；AX 同时显示该行 AXSelected=true） |
+| 搜索输入 | 输入 `Synthetic` 后字幕读 `Synthetic`；界面 `11 项 · 搜索「Synthetic」` |
+
+**侧栏选中语义缺陷与最小修复**（本次确认并修复）：
+
+- 现象：点击/快捷键切换导航后，AX 中侧栏行 `AXSelected` 恒停在「全部」；VoiceOver 不会把
+  当前页读成「已选择」。1.8.1 记录为 GAP，本轮在 1.8.2 上复现。
+- 修复（`app/Sources/PKDApp/Sidebar/NavigationSidebar.swift`，仅此一处）：在导航行上补
+  `.accessibilityAddTraits(model.nav == item ? .isSelected : [])`，视觉高亮仍由 `List(selection:)`
+  负责。备份：`app/.build/ui-qa/backup/vo-20261107184310/`。
+- 复验：切换 `⌘2`（可解包）后 AX 行选中态为 `全部=false / 可解包=true`；切换 `⌘1` 后回到
+  `全部=true`。VoiceOver 重读当前行得到 `可解包•58 项•已选 1`。修复版 bundle：
+  `app/.build/ui-qa/app/PKD QA 182 fixed2.app`。
+
+**跨视口键盘遍历（非 VoiceOver 依赖部分）**：点击卡片后连续 30 次 Tab，焦点始终在卡片间推进，
+可见首卡从长标题卡依次变为 `中性占位 0001 → 0016 → 0026 → 0036`，网格自动滚动让焦点保持可见
+（`vo-viewport.json`）。Space/Return 修复在 VoiceOver 运行下复验：Tab 到 0008 → Space 选中 0008；
+再 Tab 到 0013 → Return 选中 0013。
+
+**限制说明**：本机未捕获系统音频（需额外录音/TCC 授权），上述“朗读”以 VoiceOver 自己的
+字幕面板为准；字幕与语音由同一朗读队列驱动，但**不是音频波形验证**。欢迎首用记录：欢迎窗
+出现过（首次），本机 `~/Library` 下未发现新增 VoiceOver 偏好文件；不排除系统受保护存储中的
+首用标记，故此处如实记录“欢迎窗已出现并选择使用旁白，未改动‘不再显示’选项”。
+
+### 12.5 输入注入限制（环境，不是产品结论）
+
+- HID 全局输入在本轮可用：点击、Tab/字符键、滚轮均已验证送达开发副本；⌘ 单位快捷键
+  （⌘1–⌘6）可用。
+- 但合成 **⌥⌘ / ⌃⌘ 组合**（⌥⌘L、⌃⌘S）经 HID 未送达；改用 `CGEventPostToPid` 同一键事件通路
+  验证：⌥⌘L 使检查器 radio 2→0、再按恢复 2；⌃⌘S 使侧栏 outline 1→0。
+- 修饰键点击需同时投递 `flagsChanged` 与带 flags 的鼠标事件；只设鼠标事件 flags 时
+  `NSEvent.modifierFlags` 不更新，会退化成普通点击（本轮已按前者验证通过）。
+
+### 12.6 前台释放状态
+
+- 无任何开发副本/拖放源/Quickstart/VoiceOver 进程残留（`pgrep` 为空）；未 kill 任何非本进程。
+- 前台已归还：当前 frontmost 为 DeepSeek Harness，不是开发副本；未修改用户壁纸/文件/废纸篓。
+- 开发域 defaults 未被本轮修改（`pkd.appearance.motion` 不存在、`pkd.library.sort=titleAsc`、
+  `pkd.appearance.density=standard`）。
+- 工作树只有 `WallpaperGridView.swift` 一处修复（未提交）；未重新构建正式 app、未发布。
